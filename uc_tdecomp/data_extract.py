@@ -1,6 +1,6 @@
 
 # data_io.py
-from egret.data.data_utils import _read_from_file
+from uc_tdecomp.data_utils import _read_from_file
 import pandas as pd
 
 def load_uc_data(json_path: str):
@@ -174,16 +174,19 @@ def load_uc_data(json_path: str):
 
 
 def load_csv_data(T): 
-
-    gen_data    = pd.read_csv("C:\\Users\\vdiazpa\\Documents\\duke_data\\data_genparams_partial.csv", header=0)
-    line_data   = pd.read_csv("C:\\Users\\vdiazpa\\Documents\\duke_data\\line_params_new.csv", header=0)
-    linetobus   = pd.read_csv("C:\\Users\\vdiazpa\\Documents\\duke_data\\line_to_bus.csv", header=0)
-    bus_to_unit = pd.read_csv("C:\\Users\\vdiazpa\\Documents\\duke_data\\gen_mat.csv", header=0)
+    
+    Ddata_path = "/Users/veronica126/Documents/Grid_vulnerability/duke_grid/base_grid"
+    
+    line_thing = "/" if "/" in Ddata_path else "\\"
+    gen_data    = pd.read_csv(f"{Ddata_path}{line_thing}data_genparams_partial.csv", header=0)
+    line_data   = pd.read_csv(f"{Ddata_path}{line_thing}line_params_new.csv", header=0)
+    linetobus   = pd.read_csv(f"{Ddata_path}{line_thing}line_to_bus.csv", header=0)
+    bus_to_unit = pd.read_csv(f"{Ddata_path}{line_thing}gen_mat.csv", header=0)
     bus_to_unit.set_index("name", inplace=True)
-    nuclear_df  = pd.read_csv("C:\\Users\\vdiazpa\\Documents\\duke_data\\data_nuc.csv", header=0)
-    hydro_df    = pd.read_csv("C:\\Users\\vdiazpa\\Documents\\duke_data\\data_hydro_H.csv", header=0)
-    load_df     = pd.read_csv("C:\\Users\\vdiazpa\\Documents\\duke_data\\data_load_cut.csv", header=0)
-    solar_df    = pd.read_csv("C:\\Users\\vdiazpa\\Documents\\duke_data\\data_solar_2023.csv", header=0)
+    nuclear_df  = pd.read_csv(f"{Ddata_path}{line_thing}data_nuc.csv", header=0)
+    hydro_df    = pd.read_csv(f"{Ddata_path}{line_thing}data_hydro_H.csv", header=0)
+    load_df     = pd.read_csv(f"{Ddata_path}{line_thing}data_load_2023.csv", header=0)
+    solar_df    = pd.read_csv(f"{Ddata_path}{line_thing}data_solar_2023.csv", header=0)
 
     periods      = [i for i in range(1,T+1,1)]
     gens         = gen_data["name"].tolist()
@@ -191,9 +194,8 @@ def load_csv_data(T):
     nodes_load   = list(load_df.columns)
     nodes_noload = [n for n in all_nodes if n not in nodes_load]
     lines_list   = linetobus["line"].to_list()
-    lines = [("n_" + l.split("_")[1], "n_" + l.split("_")[3]) for l in lines_list]
-
-
+    lines        = [("n_" + l.split("_")[1], "n_" + l.split("_")[3]) for l in lines_list]
+    
     line_reactance = dict(zip(line_data["line"], line_data["reactance"]))
     line_capacity  = {line_data["line"][i]: line_data["limit"][i] for i in range(len(lines))}
     line_endpoints = {lines_list[i]: (lines[i][0], lines[i][1]) for i in range(len(lines))}
@@ -222,7 +224,7 @@ def load_csv_data(T):
 
     ren_gens   = ren_out_T.columns.tolist()
     ther_gens  = [gen for gen in gens if gen not in ren_gens]
-    ren_output = {(g, t): ren_out_T.loc[t, g] for g in ren_gens for t in periods}
+    ren_output = {(g, t): float(ren_out_T.loc[t, g]) for g in ren_gens for t in periods}
     load_T = load_df.iloc[:T].copy()
     load_T.index = periods
     demand = {(bus,t): float(load_T[bus][t]) if bus in load_T.columns else 0.0 for bus in all_nodes for t in periods}
@@ -244,8 +246,24 @@ def load_csv_data(T):
         if len(gbb_t) !=0:
             ther_gens_by_bus[bus] = tuple(gbb_t)
 
-    ren_bus_t  = {(b,t): sum(ren_output[(g,t)] for g in ren_gens if gen_bus.get(g) == b) for b in all_nodes for t in periods}
+    def assert_numeric_ren_output():
+        bad = []
+        for g in ren_gens:
+            for t in periods:
+                v = ren_output.get((g, t))
+                if isinstance(v, str):
+                    bad.append(((g, t), v))
+                elif v is None:
+                    bad.append(((g, t), None))
+        if bad:
+            print(f"Found {len(bad)} non-numeric ren_output values. First few:")
+            for (k, v) in bad[:10]:
+                print(k, repr(v), type(v).__name__)
+            raise TypeError("ren_output contains non-numeric values")
 
+    assert_numeric_ren_output()
+
+    ren_bus_t  = {(b,t): sum(ren_output[(g,t)] for g in ren_gens if gen_bus.get(g) == b) for b in all_nodes for t in periods}
 
     gen_th = gen_data[gen_data["name"].isin(ther_gens)].set_index("name") # filter gen data df for thermal gens
     p_max  = gen_th["maxcap"].to_dict()
@@ -288,7 +306,6 @@ def load_csv_data(T):
                 unit_to_bus_dict[unit] = col  
                 if col not in gen_buses:
                     gen_buses.append(col)
-
     return {
         "gens": gens,
         "buses": list(all_nodes),

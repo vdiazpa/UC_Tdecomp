@@ -1,16 +1,17 @@
 import pandas as pd
 import numpy as np
-from egret.SLBLR_lib.RH_subp_build_t import build_RH_subprobs_t
-from egret.SLBLR_lib.data_extract import load_uc_data, load_csv_data
-from egret.SLBLR_lib.bench_UC import benchmark_UC_build
+from uc_tdecomp.RH_subp_build_t import build_RH_subprobs_t
+from uc_tdecomp.data_extract import load_uc_data, load_csv_data
+from uc_tdecomp.bench_UC import benchmark_UC_build
 import csv
 from time import perf_counter
 
-L = 8           # Lookahead
-F = 32           # Roll forward period
-T = 72           # length of planning horizon
+L = 12           # Lookahead
+F = 12           # Roll forward period
+T = 48           # length of planning horizon
 prt_cry = False  # Print carryover constraints
 opt_gap = 0.05   # Optimality gap for monolithic solve
+seed    = 345
 
 #tau = 1.0 # step length in hours (following Egret's impelmentation)
 
@@ -91,7 +92,7 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, solver_seed = None, bench
     if verbose:
         print(f"\nTotal RH time: {rh_time:.3f} secs")
 
-    eval_res = benchmark_UC_build(data, opt_gap, fixed_commitment = fixed_sol)
+    eval_res = benchmark_UC_build(data, opt_gap, fixed_commitment = fixed_sol, seed = solver_seed if benchmark else {})
     ofv      = eval_res.get("ofv", None)
 
     if write_csv:           # Collect all time periods and generators
@@ -117,11 +118,11 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, solver_seed = None, bench
                     row.append(fixed_sol["UnitStop"].get((g, t), ""))
                 writer.writerow(row)
     if benchmark:
-        benchmark_UC_build(data, opt_gap)
+        benchmark_UC_build(data, opt_gap, solver_seed = solver_seed)
 
     return rh_time, ofv, fixed_sol
 
-commitment, ofv, _ = run_RH(data, F = F, L = L, T = T, write_csv = True, opt_gap = opt_gap, verbose = True, benchmark=True)
+commitment, ofv, _ = run_RH(data, F = F, L = L, T = T, write_csv = True, opt_gap = opt_gap, verbose = True, benchmark=True, solver_seed = seed)
 print("OFV with RH according to function is: ", ofv)
 
 

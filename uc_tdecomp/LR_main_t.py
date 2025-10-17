@@ -1,7 +1,7 @@
 
-from egret.SLBLR_lib.LR_subp_build_t import build_subprobs_t
-from egret.SLBLR_lib.data_extract import load_uc_data, load_csv_data
-from egret.SLBLR_lib.bench_UC import benchmark_UC_build
+from uc_tdecomp.LR_subp_build_t import build_subprobs_t
+from uc_tdecomp.data_extract import load_uc_data, load_csv_data
+from uc_tdecomp.bench_UC import benchmark_UC_build
 import numpy as np
 import math
 from pyomo.environ import *
@@ -9,7 +9,8 @@ from multiprocessing import Pool
 
 #Define functions for main loop 
 def solve_and_return(m, opt, k):
-    opt.set_objective(m.Objective.expr, sense=minimize)
+    
+    opt.set_objective(m.Objective)
 
     results = opt.solve(load_solutions = True)  # soles without rebuilding
 
@@ -77,8 +78,11 @@ def initialize_model(data, Time_windows, index_set):
     for s_e in Time_windows:
         m = build_subprobs_t(data, s_e, index_set=index_set)
         opt = SolverFactory('gurobi_persistent')
+        opt.options['LogToConsole'] = 0
+        opt.options['OutputFlag'] = 0
         opt.set_instance(m)
         opt.options['Presolve']  = 2  
+        opt.options['Seed']      = seed
         opt.options['MIPGap']    = 0.3
         solvers.append(opt)
         models.append(m)
@@ -96,19 +100,28 @@ def solver_function(task):
     result = solve_and_return(m, opt, k)
     return result
 
+seed = 345
+
 if __name__ == "__main__":
 
     #file_path  = "examples/unit_commitment/RTS_GMLC_zonal_noreserves.json"
     #file_path  = "examples/unit_commitment/tiny_rts_ready.json"
-    subn = 6
+    subn = 24  # number of periods in each subproblem
+    seed = 345
 
     #data        = load_uc_data(file_path)
-    data        =  load_csv_data(72)
+    data        =  load_csv_data(48)
     ther_gens   = data["ther_gens"]
     num_periods = len(data["periods"])
     num_sh      = math.ceil(num_periods/subn)       # number of subproblems
 
     Time_windows = [list(range(i, min(i+subn, num_periods+1))) for i in range(1, num_periods+1, subn)]
+
+
+    print("num_periods:", num_periods)
+    print("subn:", subn)
+    print("Time_windows:", Time_windows)
+    print("#subproblems:", len(Time_windows))
 
     index_set = set()
     for i in range(subn, num_periods, subn):
@@ -117,7 +130,7 @@ if __name__ == "__main__":
                     index_set.add((g, i, var))
 
     # Initialize 
-    y_LB, y_UB = 0, 100
+    y_LB, y_UB = -np.inf, np.inf
     pow_pnlty, commit_pnlty, UT_pnlty, DT_pnlty = 35, 30, 40, 32
     max_iters  = 15
 
@@ -132,15 +145,16 @@ if __name__ == "__main__":
         else:
             l[key] = UT_pnlty
 
-    q0 = benchmark_UC_build(data, 0.95)['ofv'] 
+    q0 = benchmark_UC_build(data, 0.95, seed = seed)['ofv'] 
 
     results0 = []
     for s_e in Time_windows:
         m = build_subprobs_t(data, s_e, index_set=index_set)
         opt = SolverFactory('gurobi_persistent')
         opt.set_instance(m)
-        opt.options['Presolve']  = 2  
-        opt.options['MIPGap']    = 0.3
+        opt.options['Presolve'] = 2  
+        opt.options['MIPGap']   = 0.3
+        opt.options['Seed']     = seed
         results0.append(solve_and_return(m, opt, 0))
 
     Lag0, g0  =  get_lagrange_and_g(results0, Time_windows)
@@ -166,10 +180,10 @@ if __name__ == "__main__":
     # # Initialize PSVD model
     lam_len             = range(len(g0))
     PSVD                = ConcreteModel() 
-    PSVD.y              = Var( index_set, within = Reals, bounds = (0, y_UB))
+    PSVD.y              = Var( index_set, within = Reals, bounds = (y_LB, y_UB))
     PSVD.inf_detect_cut = ConstraintList(doc = 'inf_detect')
 
-    opt = SolverFactory('glpk')
+    opt = SolverFactory('gurobi')
 
     # Step 1. Main Loop
     k = 0
@@ -198,7 +212,7 @@ if __name__ == "__main__":
         PSVD.inf_detect_cut.add( sum( g[r] * PSVD.y[r] for r in index_set ) <= sum( g[r] * l[r] for r in index_set ) - (1/gamma_hat) * s_k * g_norm**2 )
         #PSVD.inf_detect_cut.pprint()
 
-        PSVD_results = opt.solve(PSVD)
+        PSVD_results = opt.solve(PSVD, tee=False)
 
         g_scld = { r : g[r] * s_k        for r in g }
         l      = { r : l[r] + g_scld[r]  for r in g } 

@@ -2,7 +2,7 @@
 from pyomo.environ import *
 import numpy as np
 
-def build_subprobs_t(data, s_e, L, k, index_set):
+def build_subprobs_t(data, s_e, index_set):
     
     m = ConcreteModel()
 
@@ -18,7 +18,7 @@ def build_subprobs_t(data, s_e, L, k, index_set):
     m.TransmissionLines   = Set(initialize = data['lines'],      ordered=True)
     #m.CostSegments        = Set(initialize=range(1, data['n_segments']), ordered=True)  # number of piecewise cost segments
 
-    m.L_index = Set(initialize = index_set, ordered=True)   # Lagrange multipliers index set
+    m.L_index = Set(initialize = sorted(index_set), ordered=True)   # Lagrange multipliers index set
 
     # Parameters 
     m.MinUpTime             = Param(m.ThermalGenerators, initialize = data['min_UT'])
@@ -38,7 +38,7 @@ def build_subprobs_t(data, s_e, L, k, index_set):
     m.ShutdownRampLimit     = Param(m.ThermalGenerators, initialize = data['sdR'])
     m.FlowCapacity          = Param(m.TransmissionLines, initialize = data['line_cap'])
     m.LineReactance         = Param(m.TransmissionLines, initialize = data['line_reac'])
-    m.L                     = Param(m.L_index, mutable = True, initialize = lambda m, idx: 0.0)    # Make dual multipluers a parameter to avoid rebuild. 
+    m.L                     = Param(m.L_index, mutable = True, initialize = 0.0)    # Make dual multipluers a parameter to avoid rebuild. 
 
     m.InitialTimePeriodsOnline = Param(m.ThermalGenerators, 
                                         initialize = lambda m, g: max(0, int(m.MinUpTime[g]) - int(m.StatusAtT0[g])) if m.StatusAtT0[g] > 0 else 0)

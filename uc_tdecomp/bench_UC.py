@@ -1,4 +1,4 @@
-from egret.SLBLR_lib.data_extract import load_uc_data, load_csv_data
+from uc_tdecomp.data_extract import load_uc_data, load_csv_data
 import numpy as np
 from pyomo.environ import *
 from time import perf_counter
@@ -11,7 +11,7 @@ data =  load_csv_data(36)
 #data      = load_uc_data(file_path)
 
 
-def benchmark_UC_build(data, opt_gap, fixed_commitment=None):
+def benchmark_UC_build(data, opt_gap, fixed_commitment=None, seed=None):
     
     t0 = perf_counter()
 
@@ -165,6 +165,8 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None):
         print("build time monolithic:", build_time)
 
     #opt = SolverFactory('gurobi')
+    if seed: 
+        opt.options['Seed'] = seed
     opt.options['MIPGap'] = opt_gap
     #opt.options['Heuristics'] = 0.3
 
@@ -181,7 +183,7 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None):
             print(f'Heuristic cost with stitched commitments:', round(value(m.Objective),2), '\n')
         else:
             print(f"Monolithic UC cost with opt gap {opt_gap} is:", round(value(m.Objective),2))
-            print("Monolithic build + solve time:", mono_time)
+            print("Monolithic build + solve time:", round(mono_time,2))
 
     return_object = { 'ofv': value(m.Objective), 
                        'vars':  {'PowerGenerated': {(g,t): value(m.PowerGenerated[g,t]) for g in m.ThermalGenerators for t in range(m.InitialTime, m.FinalTime+1)}, 
