@@ -34,8 +34,8 @@ def load_uc_data(json_path: str):
     bus_to_unit = pd.DataFrame(0, index = list(gens), columns = list(buses))
 
     for i in range(len(lines)): 
-        line_to_bus.iloc[i][lines[i][0]] =-1
-        line_to_bus.iloc[i][lines[i][1]] = 1
+        line_to_bus.loc[i, lines[i][0]] =-1
+        line_to_bus.loc[i, lines[i][1]] = 1
 
     lTb_dict = {}
     for lid, (fb, tb) in line_endpoints.items():
@@ -227,7 +227,7 @@ def load_csv_data(T):
     ren_output = {(g, t): float(ren_out_T.loc[t, g]) for g in ren_gens for t in periods}
     load_T = load_df.iloc[:T].copy()
     load_T.index = periods
-    demand = {(bus,t): float(load_T[bus][t]) if bus in load_T.columns else 0.0 for bus in all_nodes for t in periods}
+    demand = {(bus,t): float(load_T.loc[t,bus]) if bus in load_T.columns else 0.0 for bus in all_nodes for t in periods}
 
     ref_bus, _ = max(demand, key = demand.get)
 

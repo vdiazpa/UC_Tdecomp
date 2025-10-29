@@ -1,0 +1,46 @@
+#From LR main loop extra code : 
+
+# models  = [] # list of models, one per time window
+# solvers = [] # list of persistent solvers
+
+# def initialize_model(data, Time_windows, index_set):
+    # global models, solvers
+    # models  = []
+    # solvers = []
+    # for s_e in Time_windows:
+    #     m = build_subprobs_t(data, s_e, index_set=index_set)
+    #     opt = SolverFactory('gurobi_persistent')
+    #     opt.options['LogToConsole'] = 0
+    #     opt.options['OutputFlag'] = 0
+    #     opt.set_instance(m)
+    #     opt.options['Presolve']  = 2  
+    #     opt.options['MIPGap']    = 0.3
+    #     solvers.append(opt)
+    #     models.append(m)
+
+    # def solver_function(task):
+#     sub_id, lamda_obj, k = task
+#     m   = models[sub_id]
+#     opt = solvers[sub_id]
+
+#     # Update lagrange multipliers in the model
+#     for key, val in lamda_obj.items():
+#         if key in m.L_index:
+#             m.L[key] = val
+
+#     result = solve_and_return(m, opt, k)
+#     return result
+
+    #q0 = benchmark_UC_build(data, 0.95, tee=False)['ofv'] 
+
+    # results0 = []
+    # for s_e in Time_windows:
+    #     m = build_subprobs_t(data, s_e, index_set=index_set)
+    #     opt = SolverFactory('gurobi_persistent')
+    #     opt.set_instance(m)
+    #     opt.options['Presolve'] = 2  
+    #     opt.options['MIPGap']   = 0.3
+    #     results0.append(solve_and_return(m, opt, 0))
+
+#def make_tasks_for_pool(T_windows, lambda_obj, k):
+#    return [(i,lambda_obj, k) for i in range(len(T_windows))]

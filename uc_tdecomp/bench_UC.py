@@ -4,14 +4,14 @@ from pyomo.environ import *
 from time import perf_counter
 
 #enter filepath with data and subhorizon window size
-file_path  = "examples/unit_commitment/RTS_GMLC_zonal_noreserves.json"
+file_path  = "./RTS_GMLC_zonal_noreserves.json"
 #file_path = "examples/unit_commitment/tiny_rts_ready.json"
 
-data =  load_csv_data(36)
+data =  load_csv_data(168)
 #data      = load_uc_data(file_path)
 
 
-def benchmark_UC_build(data, opt_gap, fixed_commitment=None, seed=None):
+def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False):
     
     t0 = perf_counter()
 
@@ -40,10 +40,10 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, seed=None):
     m.UnitOnT0               = Param(m.ThermalGenerators, initialize = lambda m, g: 1.0 if m.StatusAtT0[g] > 0 else 0.0)
     
     m.InitialTimePeriodsOnline = Param(m.ThermalGenerators, 
-                                        initialize = lambda m, g: (min(W_full, max(0, int(value(m.MinUpTime[g])) - int(value(m.StatusAtT0[g])))) if value(m.StatusAtT0[g]) > 0 else 0))
+                                        initialize = lambda m, g: (min(W_full, max(0, int(m.MinUpTime[g]) - int(m.StatusAtT0[g]))) if m.StatusAtT0[g] > 0 else 0))
     
     m.InitialTimePeriodsOffline =  Param(m.ThermalGenerators, 
-                                        initialize = lambda m, g: (min(W_full, max(0, int(value(m.MinDownTime[g])) - abs(int(value(m.StatusAtT0[g]))))) if value(m.StatusAtT0[g]) < 0 else 0))
+                                        initialize = lambda m, g: (min(W_full, max(0, int(m.MinDownTime[g]) - abs(int(m.StatusAtT0[g])))) if m.StatusAtT0[g] < 0 else 0))
     
     m.MaximumPowerOutput     = Param(m.ThermalGenerators,   initialize=data['p_max'])
     m.MinimumPowerOutput     = Param(m.ThermalGenerators,   initialize=data['p_min'])
@@ -61,6 +61,8 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, seed=None):
     # Variables & Bounds
     m.PowerGenerated      = Var(m.ThermalGenerators, m.TimePeriods, within=NonNegativeReals) 
     m.PowerCostVar        = Var(m.ThermalGenerators, m.TimePeriods, within=NonNegativeReals) 
+    m.UTRemain            = Var(m.ThermalGenerators, m.TimePeriods, within=NonNegativeReals) 
+    m.DTRemain            = Var(m.ThermalGenerators, m.TimePeriods, within=NonNegativeReals) 
     m.UnitOn              = Var(m.ThermalGenerators, m.TimePeriods, within=Binary)
     m.UnitStart           = Var(m.ThermalGenerators, m.TimePeriods, within=Binary)
     m.UnitStop            = Var(m.ThermalGenerators, m.TimePeriods, within=Binary)
@@ -89,19 +91,30 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, seed=None):
     m.logical_constraints  = ConstraintList(doc = 'logical')
     m.RampUp_constraints   = ConstraintList(doc = 'ramp_up')
     m.RampDown_constraints = ConstraintList(doc = 'ramp_down')
+    m.UTRemain_constraints = ConstraintList(doc = 'UT_remain')
+    m.DTRemain_constraints = ConstraintList(doc = 'DT_remain')
     
     # Add time-coupling constraints
     for g in m.ThermalGenerators:
         for t in m.TimePeriods: 
+            m.UTRemain_constraints.add( m.UTRemain[g,t] <= m.MinUpTime[g] * m.UnitOn[g,t]) 
+            m.DTRemain_constraints.add( m.DTRemain[g,t] <= m.MinDownTime[g] * (1 - m.UnitOn[g,t]))
+            
             if t == m.InitialTime:
                 m.logical_constraints.add(m.UnitStart[g,t] - m.UnitStop[g,t] == m.UnitOn[g,t] - m.UnitOnT0[g])
                 m.RampUp_constraints.add(m.PowerGenerated[g,t] - m.PowerGeneratedT0[g]<= m.NominalRampUpLimit[g] * m.UnitOnT0[g] + m.StartupRampLimit[g] * m.UnitStart[g,t])
                 m.RampDown_constraints.add(m.PowerGeneratedT0[g] - m.PowerGenerated[g,t] <= m.NominalRampDownLimit[g] * m.UnitOn[g,t] + m.ShutdownRampLimit[g] * m.UnitStop[g,t]) #assumes power generated at 0 is 0
+                
+                m.UTRemain_constraints.add( m.UTRemain[g,t] >=  m.InitialTimePeriodsOnline[g] +m.MinUpTime[g]*m.UnitStart[g,t] - m.UnitOn[g,t])
+                m.DTRemain_constraints.add( m.DTRemain[g,t] >=  m.InitialTimePeriodsOffline[g] +m.MinDownTime[g]*m.UnitStop[g,t] - (1 -m.UnitOn[g,t]))
 
             else: 
                 m.logical_constraints.add(m.UnitStart[g,t] - m.UnitStop[g,t] == m.UnitOn[g,t] - m.UnitOn[g,t-1])
                 m.RampUp_constraints.add(m.PowerGenerated[g,t] - m.PowerGenerated[g,t-1] <= m.NominalRampUpLimit[g] * m.UnitOn[g, t-1] + m.StartupRampLimit[g] * m.UnitStart[g,t])
                 m.RampDown_constraints.add(m.PowerGenerated[g,t-1] - m.PowerGenerated[g,t] <= m.NominalRampDownLimit[g] * m.UnitOn[g, t] + m.ShutdownRampLimit[g] * m.UnitStop[g,t])
+                
+                m.UTRemain_constraints.add( m.UTRemain[g,t] >=  m.UTRemain[g,t-1] +m.MinUpTime[g]*m.UnitStart[g,t] - m.UnitOn[g,t])
+                m.DTRemain_constraints.add( m.DTRemain[g,t] >=  m.DTRemain[g,t-1] +m.MinDownTime[g]*m.UnitStop[g,t] - (1 -m.UnitOn[g,t]))
 
     #UpTime Contraint Lists
     m.MinUpTime_constraints    = ConstraintList(doc='MinUpTime')
@@ -122,16 +135,16 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, seed=None):
                 m.UnitOn[g, t].fix(0)
 
     # Intra-window Uptime
-        for t in range(m.InitialTime + lg, m.FinalTime + 1):
-            kg = min(m.FinalTime - t + 1 , int(m.MinUpTime[g]))
-            m.MinUpTime_constraints.add( sum(m.UnitOn[g,t] for t in range(t, t+kg)) >= kg * m.UnitStart[g,t] )
+    #     for t in range(m.InitialTime + lg, m.FinalTime + 1):
+    #         kg = min(m.FinalTime - t + 1 , int(m.MinUpTime[g]))
+    #         m.MinUpTime_constraints.add( sum(m.UnitOn[g,t] for t in range(t, t+kg)) >= kg * m.UnitStart[g,t] )
 
-    # # Intra-window Downtime
-        for t in range(m.InitialTime + fg, m.FinalTime + 1):
-            hg = min(m.FinalTime - t + 1, int(m.MinDownTime[g]))
-            valid_tt = [tt for tt in range(t, t + hg) if tt in m.TimePeriods]
-            m.MinDownTime_constraints.add( sum(m.UnitOn[g,tt] for tt in valid_tt) <= (1 - m.UnitStop[g,t]) * hg )
-
+    # # # Intra-window Downtime
+    #     for t in range(m.InitialTime + fg, m.FinalTime + 1):
+    #         hg = min(m.FinalTime - t + 1, int(m.MinDownTime[g]))
+    #         valid_tt = [tt for tt in range(t, t + hg) if tt in m.TimePeriods]
+    #         m.MinDownTime_constraints.add( sum(m.UnitOn[g,tt] for tt in valid_tt) <= (1 - m.UnitStop[g,t]) * hg )
+    
     
     if fixed_commitment:
         print('fixing inputed variable values')
@@ -165,14 +178,12 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, seed=None):
         print("build time monolithic:", build_time)
 
     #opt = SolverFactory('gurobi')
-    if seed: 
-        opt.options['Seed'] = seed
     opt.options['MIPGap'] = opt_gap
     #opt.options['Heuristics'] = 0.3
 
     t_solve = perf_counter()         # --------- start SOLVE timer
 
-    results = opt.solve(m, tee = False)
+    results = opt.solve(m, tee = tee)
 
     solve_time = perf_counter() - t_solve
 
@@ -199,6 +210,27 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, seed=None):
     #         print(f"UnitOn[{g},{t}] = {int(round(v))}")
 
     import csv
+    all_t = sorted({t for t in m.TimePeriods})
+    all_g = sorted({g for g in m.ThermalGenerators})
+
+    with open(f"Sol_New_MUT.csv", "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Variable", "Generator"] + all_t)
+        for g in all_g:
+            row = ["UnitOn", g]
+            for t in all_t:
+                row.append(return_object['vars']['UnitOn'].get((g, t), "")) 
+            writer.writerow(row)
+        for g in all_g:
+            row = ["UnitStart", g]
+            for t in all_t:
+                row.append(return_object['vars']['UnitStart'].get((g, t), ""))
+            writer.writerow(row)
+        for g in all_g:
+            row = ["UnitStop", g]
+            for t in all_t:
+                row.append(return_object['vars']['UnitStop'].get((g, t), ""))
+            writer.writerow(row)
 
     # total_ls = sum(float(v) for v in return_object['vars']['LoadShed'].values())
     # print(f'Total load shed cost: {total_ls * 1000}')
@@ -206,4 +238,4 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, seed=None):
     return return_object
 
         
-#x = benchmark_UC_build(data, opt_gap=0.1)
+#x = benchmark_UC_build(data, opt_gap=0.01)

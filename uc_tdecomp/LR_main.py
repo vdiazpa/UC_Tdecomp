@@ -101,9 +101,15 @@ def solver_function(task):
     m   = MODEL_CACHE[sub_id]
     opt = SOLVER_CACHE[sub_id]
 
+    # Update Lagrange multipliers in-place (no re-construction)
     for key, val in lambda_obj.items():
         if key in m.L_index:
             m.L[key] = val
+
+    # (Optional) warm start:
+    # If you saved last solution for this sub_id, assign to m.Var[...] .value = ...
+    # then inform the persistent solver to use a warm start:
+    # opt.set_warm_start()  # for pyomo.gurobi_persistent, this reads Var.value as MIP start
 
     return solve_and_return(m, opt, k)
 
@@ -233,6 +239,7 @@ if __name__ == "__main__":
                     w.writerow([g, t, var, val])
             print('Saved final multipliers to l_final.csv')
             
+        #print("Lagrange multiplier values:", l)
         print("PSVD results:", PSVD_results.solver.termination_condition )
         
         if PSVD_results.solver.termination_condition != TerminationCondition.optimal:
@@ -253,6 +260,7 @@ if __name__ == "__main__":
         iter_times.append(t1 - t0)
         print(f"Iter {k} took {t1 - t0:.2f}s;  current dual={Lag:.2f}, level={q:.2f}, gap={gap_pct:.2f}%")
         k+=1
+        #print(k)
     t_end = perf_counter()
     print(f"Total LR time = {t_end - t_all_start:.2f}s, "f"avg iter time = {np.mean(iter_times):.2f}s")
 
@@ -260,17 +268,17 @@ if __name__ == "__main__":
     results_final = pool.map(solver_function, [(i, l, max_iters) for i in range(len(Time_windows))])
     Lag_final, _ = get_lagrange_and_g(results_final, Time_windows)
 
-    Lag_set.append(Lag_final)   
-    Level_vals.append(q)        
+    Lag_set.append(Lag_final)   # now you have the post-update dual
+    Level_vals.append(q)        # keep lengths aligned for plotting
 
     print("\n############### Summary of results #################")
     print("Level values", Level_vals)
     print("Lagrangian values", Lag_set)
+    #print("lambda values: ", l)
     pool.close()
     pool.join()
     
-    #=====================================================================  Plot Results ======
-    
+    #Plot Results
     import numpy as np
     import matplotlib.pyplot as plt
 
@@ -279,14 +287,21 @@ if __name__ == "__main__":
     iters = np.arange(len(dual))
 
     plt.figure()
+
+    # Solid blue for L_best
     plt.plot(iters, lbest, label='Best Lagrangian (running max)', color='C1', linestyle='--')
+
+    # Orange dashed for Dual
     plt.plot(iters, dual,  label='Dual at iteration k', color='C0', linestyle='-')
+
+    # (optional) Level line in green
     level = np.array(Level_vals[:len(dual)])
     plt.plot(iters, level, label='Level Value', color='C2')
+
     plt.xlabel('Iteration'); plt.ylabel('Value')
     plt.title('Dual and Best Lagrangian Lower Bound Over Iterations')
     plt.legend(); plt.tight_layout()
-    plt.savefig('dual_vs_lbest_gamma={gamma}_hat={gamma_hat}_bounds=({y_LB},{y_UB})_T={T}.svg')               
+    plt.savefig('dual_vs_lbest_gamma={gamma}_hat={gamma_hat}_bounds=({y_LB},{y_UB})_T={T}.svg')                 # or: plt.savefig('dual_vs_lbest.svg', format='svg')
     plt.show()
 
 

@@ -99,7 +99,7 @@ def build_RH_subprobs_t(data, s_e, init_state, fixed, print_carryover = False, o
                     m.UnitStop[g,t].fix(0)
 
                     if t != m.InitialTime:
-                        m.RampUp_constraints.add(m.PowerGenerated[g,t] - m.PowerGenerated[g,t-1]<= m.NominalRampUpLimit[g])    
+                        m.RampUp_constraints.add(m.PowerGenerated[g,t] - m.PowerGenerated[g,t-1]<= m.NominalRampUpLimit[g])     # simple bound; or Rup*UnitOn[g,t-1] if you prefer
                         m.RampDown_constraints.add(m.PowerGenerated[g,t-1] - m.PowerGenerated[g,t]<= m.NominalRampDownLimit[g])
     else: 
         for g in m.ThermalGenerators:
