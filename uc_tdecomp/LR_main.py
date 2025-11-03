@@ -1,5 +1,5 @@
 
-from uc_tdecomp.LR_subp_build import build_subprobs_tt
+from uc_tdecomp.LR_subp_build import build_LR_subprobs
 from uc_tdecomp.data_extract import load_uc_data, load_csv_data
 from pyomo.environ import *
 from time import perf_counter
@@ -7,6 +7,11 @@ from multiprocessing import Pool
 import numpy as np
 import math
 import csv
+
+import logging
+logging.getLogger('pyomo.core').setLevel(logging.ERROR)
+
+USE_WARMSTART = False
 
 # worker objects (globals)
  # Module level names that will exist in every worker process
@@ -18,11 +23,13 @@ MODEL_CACHE  = {}
 LAST_START   = {}
 
 #Define functions for main loop 
-def solve_and_return(m, opt, k):
+def solve_and_return(m, opt, k, sub_id):
     
     opt.set_objective(m.Objective)
+    
+    results = opt.solve(load_solutions = True, warmstart = USE_WARMSTART)  # soles without rebuilding
 
-    results = opt.solve(load_solutions = True)  # soles without rebuilding
+    LAST_START[sub_id] = _capture_start(m)
 
     if 1 in list(m.TimePeriods):
                 return_object = {  'ofv': value(m.Objective), 
@@ -97,7 +104,7 @@ def solver_function(task):
 
     # Build & cache model+solver for this subproblem the first time we see it
     if sub_id not in MODEL_CACHE:
-        m = build_subprobs_tt(DATA, TIME_WINDOWS[sub_id], index_set=INDEX_SET)
+        m = build_LR_subprobs(DATA, TIME_WINDOWS[sub_id], index_set=INDEX_SET)
         opt = SolverFactory('gurobi_persistent')
         opt.options['OutputFlag'] = 0
         opt.options['Presolve'] = 2
@@ -109,17 +116,72 @@ def solver_function(task):
     m   = MODEL_CACHE[sub_id]
     opt = SOLVER_CACHE[sub_id]
 
-    # Update Lagrange multipliers in-place (no re-construction)
+    # Update Lagrange multipliers in-place
     for key, val in lambda_obj.items():
         if key in m.L_index:
             m.L[key] = val
+            
+    if USE_WARMSTART and sub_id in LAST_START:
+        _apply_start(m, LAST_START[sub_id])
 
-    # (Optional) warm start:
-    # If you saved last solution for this sub_id, assign to m.Var[...] .value = ...
-    # then inform the persistent solver to use a warm start:
-    # opt.set_warm_start()  # for pyomo.gurobi_persistent, this reads Var.value as MIP start
+    return solve_and_return(m, opt, k, sub_id)
 
-    return solve_and_return(m, opt, k)
+def _capture_start(m):
+    start = {
+        # binaries
+        'UnitOn':         {(g,t): int(round(value(m.UnitOn[g,t])))
+                           for g in m.ThermalGenerators for t in m.TimePeriods},
+        'UnitStart':      {(g,t): int(round(value(m.UnitStart[g,t])))
+                           for g in m.ThermalGenerators for t in m.TimePeriods
+                           if (g,t) in m.UnitStart},   # guard if your model variant changes
+        'UnitStop':       {(g,t): int(round(value(m.UnitStop[g,t])))
+                           for g in m.ThermalGenerators for t in m.TimePeriods
+                           if (g,t) in m.UnitStop},
+        'IsCharging':     {(b,t): int(round(value(m.IsCharging[b,t])))
+                           for b in m.StorageUnits for t in m.TimePeriods
+                           if (b,t) in m.IsCharging},
+        'IsDischarging':  {(b,t): int(round(value(m.IsDischarging[b,t])))
+                           for b in m.StorageUnits for t in m.TimePeriods
+                           if (b,t) in m.IsDischarging},
+
+        # key continuous
+        'PowerGenerated': {(g,t): value(m.PowerGenerated[g,t])
+                           for g in m.ThermalGenerators for t in m.TimePeriods},
+        'SoC':            {(b,t): value(m.SoC[b,t])
+                           for b in m.StorageUnits for t in m.TimePeriods
+                           if (b,t) in m.SoC},
+        'ChargePower':    {(b,t): value(m.ChargePower[b,t])
+                           for b in m.StorageUnits for t in m.TimePeriods
+                           if (b,t) in m.ChargePower},
+        'DischargePower': {(b,t): value(m.DischargePower[b,t])
+                           for b in m.StorageUnits for t in m.TimePeriods
+                           if (b,t) in m.DischargePower}}
+    return start
+
+def _apply_start(m, start):
+    """Assign Var.value; persistent solver reads these on set_warm_start()."""
+    # binaries
+    for (g,t), v in start.get('UnitOn', {}).items():
+        if (g,t) in m.UnitOn: m.UnitOn[g,t].value = v
+    for (g,t), v in start.get('UnitStart', {}).items():
+        if (g,t) in m.UnitStart: m.UnitStart[g,t].value = v
+    for (g,t), v in start.get('UnitStop', {}).items():
+        if (g,t) in m.UnitStop: m.UnitStop[g,t].value = v
+    for (b,t), v in start.get('IsCharging', {}).items():
+        if (b,t) in m.IsCharging: m.IsCharging[b,t].value = v
+    for (b,t), v in start.get('IsDischarging', {}).items():
+        if (b,t) in m.IsDischarging: m.IsDischarging[b,t].value = v
+
+    # continuous
+    for (g,t), v in start.get('PowerGenerated', {}).items():
+        if (g,t) in m.PowerGenerated: m.PowerGenerated[g,t].value = v
+    for (b,t), v in start.get('SoC', {}).items():
+        if (b,t) in m.SoC: m.SoC[b,t].value = v
+    for (b,t), v in start.get('ChargePower', {}).items():
+        if (b,t) in m.ChargePower: m.ChargePower[b,t].value = v
+    for (b,t), v in start.get('DischargePower', {}).items():
+        if (b,t) in m.DischargePower: m.DischargePower[b,t].value = v
+
 
 if __name__ == "__main__":
 
@@ -176,7 +238,8 @@ if __name__ == "__main__":
     
     #q0 = Lag0 + 0.1* (abs(Lag0) + 1.0)
     if T == 168: 
-        q0 = 2471099193.65292
+        #q0 = 2471099193.65292 #w/o storage
+        q0 =  2777992669.3 #w/ storage
     else: 
         #q0 = 1021672097.99475 #w/o storage
         q0 =  1148691695.01 #w/ storage
@@ -187,8 +250,8 @@ if __name__ == "__main__":
     #==========================================================# Initialize Main Loop #==========
     # gamma      = 1/num_sh   
     max_iters    = 30
-    gamma        = 0.5
-    gamma_hat    = 1.5
+    gamma        = 0.3
+    gamma_hat    = 1
 
     y_LB, y_UB   = -np.inf, np.inf
     lam_len      = range(len(g0))         # Initialize PSVD model

@@ -147,8 +147,7 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt
                     if t == m.InitialTime:
                         m.logical_constraints.add(m.UnitStart[g,t] - m.UnitStop[g,t] == m.UnitOn[g,t] - m.UnitOnT0[g])
                         m.RampUp_constraints.add(m.PowerGenerated[g,t] - m.PowerGeneratedT0[g]<= m.NominalRampUpLimit[g] * m.UnitOnT0[g] + m.StartupRampLimit[g] * m.UnitStart[g,t])
-                        m.RampDown_constraints.add(m.PowerGeneratedT0[g] - m.PowerGenerated[g,t]<= m.NominalRampDownLimit[g] * m.UnitOn[g,t] + m.ShutdownRampLimit[g] * m.UnitStop[g,t])
-                        
+                        m.RampDown_constraints.add(m.PowerGeneratedT0[g] - m.PowerGenerated[g,t]<= m.NominalRampDownLimit[g] * m.UnitOn[g,t] + m.ShutdownRampLimit[g] * m.UnitStop[g,t]) 
                     else:
                         m.logical_constraints.add(m.UnitStart[g,t] - m.UnitStop[g,t] == m.UnitOn[g,t] - m.UnitOn[g,t-1])
                         m.RampUp_constraints.add(m.PowerGenerated[g,t] - m.PowerGenerated[g,t-1]<= m.NominalRampUpLimit[g] * m.UnitOn[g,t-1] + m.StartupRampLimit[g] * m.UnitStart[g,t])

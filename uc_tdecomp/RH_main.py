@@ -7,9 +7,9 @@ import pandas as pd
 import numpy as np
 import csv
 
-L = 4            # Lookahead
-F = 8            # Roll forward period
-T = 72          # length of planning horizon
+# L = 4            # Lookahead
+# F = 12            # Roll forward period
+T = 336          # length of planning horizon
 prt_cry = False  # Print carryover constraints
 opt_gap = 0.05   # Optimality gap for monolithic solve
 
@@ -121,11 +121,10 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=Non
 
     return rh_time, ofv, fixed_sol
 
-commitment, ofv, _ = run_RH(data, F = F, L = L, T = T, write_csv = True, opt_gap = opt_gap, verbose = True, benchmark=True)
-print("OFV with RH according to function is: ", ofv)
+# commitment, ofv, _ = run_RH(data, F = F, L = L, T = T, write_csv = True, opt_gap = opt_gap, verbose = True, benchmark=True)
+# print("OFV with RH according to function is: ", ofv)
 
-
-def sweep_RH(data, T =T, F_vals = [4,8,12,16,20,24], L_vals = [4,8,12,16,20,24], seeds=(41,72,36, 65, 797), opt_gap = opt_gap, only_valid = False, csv_path = "rh_duke_results_EXP1.csv", verbose = False):
+def sweep_RH(data, T =T, F_vals = [4,8,12,16,20,24], L_vals = [4,8,12,16,20,24], seeds=(41, 86), opt_gap = opt_gap, only_valid = False, csv_path = f"rh_duke_results_EXP_{T}.csv", verbose = False):
 
     records = []
     for F in F_vals:
@@ -176,7 +175,7 @@ def sweep_RH(data, T =T, F_vals = [4,8,12,16,20,24], L_vals = [4,8,12,16,20,24],
     print(f"Wrote {len(df)} rows to {csv_path}")
     return df
 
-#df = sweep_RH( data, T = T, F_vals = [4,8,12,16,20,24], L_vals = [4,8,12,16,20,24], seeds=(41,72,36, 65, 797), opt_gap = 0.05, only_valid = True, csv_path = "rh_duke_results_EXP2_168HR.csv", verbose = True)
+df = sweep_RH( data, T = T, F_vals = [4,8,12,16,20,24], L_vals = [4,8,12,16,20,24], seeds=(41, 86), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR.csv", verbose = True)
 
 ##############Plotting code##############
 

@@ -2,7 +2,7 @@
 from pyomo.environ import *
 import numpy as np
 
-def build_subprobs_tt(data, s_e, index_set):
+def build_LR_subprobs(data, s_e, index_set):
     
     m = ConcreteModel()
 

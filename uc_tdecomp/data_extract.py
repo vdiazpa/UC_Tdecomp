@@ -183,11 +183,11 @@ def load_csv_data(T):
     linetobus   = pd.read_csv(f"{data_folder_name}{line_thing}line_to_bus.csv", header=0)
     bus_to_unit = pd.read_csv(f"{data_folder_name}{line_thing}gen_mat_Interim_P1.csv", header=0)
     bus_to_unit.set_index("name", inplace=True)
-    nuclear_df  = pd.read_csv(f"{data_folder_name}{line_thing}data_nuc_Interim_P1.csv", header=0)
-    hydro_df    = pd.read_csv(f"{data_folder_name}{line_thing}data_hydro_H.csv", header=0)
-    load_df     = pd.read_csv(f"{data_folder_name}{line_thing}data_load_2023.csv", header=0)
-    solar_df    = pd.read_csv(f"{data_folder_name}{line_thing}data_solar_2023.csv", header=0)
-    wind_df     = pd.read_csv(f"{data_folder_name}{line_thing}data_wind_2023.csv", header=0)
+    nuclear_df  = pd.read_csv(f"{data_folder_name}{line_thing}data_nuc_Interim_P1.csv", header=0, nrows = T)
+    hydro_df    = pd.read_csv(f"{data_folder_name}{line_thing}data_hydro_H.csv", header=0, nrows = T)
+    load_df     = pd.read_csv(f"{data_folder_name}{line_thing}data_load_2023.csv", header=0, nrows = T)
+    solar_df    = pd.read_csv(f"{data_folder_name}{line_thing}data_solar_2023.csv", header=0, nrows = T)
+    wind_df     = pd.read_csv(f"{data_folder_name}{line_thing}data_wind_2023.csv", header=0, nrows = T)
     sto_mat     = pd.read_csv(f"{data_folder_name}{line_thing}storage_mat_Interim_P1.csv", header=0)
     sto_params  = pd.read_csv(f"{data_folder_name}{line_thing}data_batparams_Interim_P1.csv", header=0)
 
@@ -207,7 +207,6 @@ def load_csv_data(T):
     line_to_bus  = linetobus.iloc[:, 1:]
     line_to_bus.rename(index={i: lines_list[i] for i in range(len(lines_list))}, inplace=True)
     line_to_bus_dict = {(lid, b): line_to_bus.loc[lid, b] for lid in lines_list for b in all_nodes if line_to_bus.loc[lid, b] != 0}
-    bus_to_unit_dict = {(lid, b): bus_to_unit.loc[lid, b] for lid in gens       for b in all_nodes if bus_to_unit.loc[lid, b] != 0}
 
     lines_by_bus = { b: tuple(l for l in lines_list if (l, b) in line_to_bus_dict) for b in all_nodes }
 
