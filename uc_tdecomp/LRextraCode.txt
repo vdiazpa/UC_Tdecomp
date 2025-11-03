@@ -44,3 +44,50 @@
 
 #def make_tasks_for_pool(T_windows, lambda_obj, k):
 #    return [(i,lambda_obj, k) for i in range(len(T_windows))]
+
+
+    # opt = SolverFactory('gurobi')
+    # #opt.options['Heuristics'] = 0.5
+    # opt.options['Presolve']   = 2
+    # opt.options['MIPGap']     = 0.3
+    # #opt.options['mipgap'] = 0.1
+
+    # results = opt.solve(m)
+
+    # #print("\nThe objective value is:", round(value(m.Objective), 2))
+
+    # import csv
+
+    # if 1 in s_e: 
+    #     return_object = {  'ofv': value(m.Objective), 
+    #         'vars': {
+    #             'PowerGenerated':  {(g,t): value(m.PowerGenerated[g,t])  for g in m.ThermalGenerators for t in m.TimePeriods },
+    #             'UnitOn':          {(g,t): value(m.UnitOn[g,t])          for g in m.ThermalGenerators for t in m.TimePeriods}, 
+    #             'UT_Obl_end':      {(g,t): value(m.UT_Obl_end[g,t])      for g in m.ThermalGenerators for t in m.Max_t},
+    #             'DT_Obl_end':      {(g,t): value(m.DT_Obl_end[g,t])      for g in m.ThermalGenerators for t in m.Max_t}}}
+    # else: 
+    #     return_object = {  'ofv': value(m.Objective), 
+    #         'vars': {
+    #             'UnitOn_copy':         {(g,t): value(m.UnitOn_copy[g,t])         for g in m.ThermalGenerators for t in m.Min_t}, 
+    #             'PowerGenerated_copy': {(g,t): value(m.PowerGenerated_copy[g,t]) for g in m.ThermalGenerators for t in m.Min_t},
+    #             'UT_Obl_end':          {(g,t): value(m.UT_Obl_end[g,t])          for g in m.ThermalGenerators for t in m.Max_t},
+    #             'DT_Obl_end':          {(g,t): value(m.DT_Obl_end[g,t])          for g in m.ThermalGenerators for t in m.Max_t},
+    #             'UT_Obl_copy':         {(g,t): value(m.UT_Obl_copy[g,t])         for g in m.ThermalGenerators for t in m.Min_t},
+    #             'DT_Obl_copy':         {(g,t): value(m.DT_Obl_copy[g,t])         for g in m.ThermalGenerators for t in m.Min_t},
+    #             'PowerGenerated':      {(g,t): value(m.PowerGenerated[g,t])      for g in m.ThermalGenerators for t in m.TimePeriods },
+    #             'UnitOn':              {(g,t): value(m.UnitOn[g,t])              for g in m.ThermalGenerators for t in m.TimePeriods }}}
+        
+    # if k ==1:
+    #     m.write(f'm.{str(s_e)}_{k}.lp', io_options = {'symbolic_solver_labels': True})
+    #     csv_filename = f"solution_{str(s_e)}_{k}.csv"
+    #     with open(csv_filename, mode='w', newline='') as csvfile:
+    #         writer = csv.writer(csvfile)
+    #         writer.writerow(['Var', 'g', 't', 'Value'])
+
+    #         for varname, index_dict in return_object['vars'].items():
+    #             for (g,t), val in index_dict.items():
+    #                 writer.writerow([varname, g, t, val])
+
+    # return return_object
+    
+

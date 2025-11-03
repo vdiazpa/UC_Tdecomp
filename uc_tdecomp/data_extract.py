@@ -175,18 +175,22 @@ def load_uc_data(json_path: str):
 
 def load_csv_data(T): 
     
-    Ddata_path = "/Users/veronica126/Documents/Grid_vulnerability/duke_grid/base_grid"
+    data_folder_name = "./duke_data_interim_P1"
     
-    line_thing = "/" if "/" in Ddata_path else "\\"
-    gen_data    = pd.read_csv(f"{Ddata_path}{line_thing}data_genparams_partial.csv", header=0)
-    line_data   = pd.read_csv(f"{Ddata_path}{line_thing}line_params_new.csv", header=0)
-    linetobus   = pd.read_csv(f"{Ddata_path}{line_thing}line_to_bus.csv", header=0)
-    bus_to_unit = pd.read_csv(f"{Ddata_path}{line_thing}gen_mat.csv", header=0)
+    line_thing = "/" if "/" in data_folder_name else "\\"
+    gen_data    = pd.read_csv(f"{data_folder_name}{line_thing}data_genparams_partial_Interim_P1.csv", header=0)
+    line_data   = pd.read_csv(f"{data_folder_name}{line_thing}line_params_new.csv", header=0)
+    linetobus   = pd.read_csv(f"{data_folder_name}{line_thing}line_to_bus.csv", header=0)
+    bus_to_unit = pd.read_csv(f"{data_folder_name}{line_thing}gen_mat_Interim_P1.csv", header=0)
     bus_to_unit.set_index("name", inplace=True)
-    nuclear_df  = pd.read_csv(f"{Ddata_path}{line_thing}data_nuc.csv", header=0)
-    hydro_df    = pd.read_csv(f"{Ddata_path}{line_thing}data_hydro_H.csv", header=0)
-    load_df     = pd.read_csv(f"{Ddata_path}{line_thing}data_load_2023.csv", header=0)
-    solar_df    = pd.read_csv(f"{Ddata_path}{line_thing}data_solar_2023.csv", header=0)
+    nuclear_df  = pd.read_csv(f"{data_folder_name}{line_thing}data_nuc_Interim_P1.csv", header=0)
+    hydro_df    = pd.read_csv(f"{data_folder_name}{line_thing}data_hydro_H.csv", header=0)
+    load_df     = pd.read_csv(f"{data_folder_name}{line_thing}data_load_2023.csv", header=0)
+    solar_df    = pd.read_csv(f"{data_folder_name}{line_thing}data_solar_2023.csv", header=0)
+    wind_df     = pd.read_csv(f"{data_folder_name}{line_thing}data_wind_2023.csv", header=0)
+    sto_mat     = pd.read_csv(f"{data_folder_name}{line_thing}storage_mat_Interim_P1.csv", header=0)
+    sto_params  = pd.read_csv(f"{data_folder_name}{line_thing}data_batparams_Interim_P1.csv", header=0)
+
 
     periods      = [i for i in range(1,T+1,1)]
     gens         = gen_data["name"].tolist()
@@ -217,7 +221,7 @@ def load_csv_data(T):
                     break
 
     #Get renewable output & demand time series
-    ren_out_yr = pd.concat([solar_df, hydro_df, nuclear_df], axis=1)
+    ren_out_yr = pd.concat([solar_df, hydro_df, wind_df, nuclear_df], axis=1)
 
     ren_out_T = ren_out_yr.iloc[:T].copy()
     ren_out_T.index = periods
@@ -245,23 +249,6 @@ def load_csv_data(T):
             gens_by_bus[bus] = tuple(gbb)
         if len(gbb_t) !=0:
             ther_gens_by_bus[bus] = tuple(gbb_t)
-
-    def assert_numeric_ren_output():
-        bad = []
-        for g in ren_gens:
-            for t in periods:
-                v = ren_output.get((g, t))
-                if isinstance(v, str):
-                    bad.append(((g, t), v))
-                elif v is None:
-                    bad.append(((g, t), None))
-        if bad:
-            print(f"Found {len(bad)} non-numeric ren_output values. First few:")
-            for (k, v) in bad[:10]:
-                print(k, repr(v), type(v).__name__)
-            raise TypeError("ren_output contains non-numeric values")
-
-    assert_numeric_ren_output()
 
     ren_bus_t  = {(b,t): sum(ren_output[(g,t)] for g in ren_gens if gen_bus.get(g) == b) for b in all_nodes for t in periods}
 
@@ -306,8 +293,38 @@ def load_csv_data(T):
                 unit_to_bus_dict[unit] = col  
                 if col not in gen_buses:
                     gen_buses.append(col)
+                    
+    #Storage Parameters
+    bats = sto_params["name"].tolist()
+    sto_params["node_bat"].apply(lambda x: f"n_{str(x)}")
+    sto_params.set_index("name", inplace=True)
+    sto_RoC  = sto_params["bat_RoC"].to_dict()
+    sto_Ecap = sto_params["bat_cap"].to_dict()
+    sto_eff  = sto_params["bat_eff"].to_dict()
+    SoC_init = {b: 0.0 for b in bats}  #assumes storage initial SoC is 0
+    
+    bat_bus = sto_params["node_bat"].apply(lambda x: f"n_{str(x)}").to_dict()
+    
+    df = sto_mat.set_index('name')
+    
+    bus_bat = {}
+    for bus in all_nodes:
+        if df[bus].sum() > 0:
+            l = []
+            for b in bats:
+                if df[bus][b] >0:
+                    l.append(b)
+            bus_bat[bus] = l
+                
     return {
         "gens": gens,
+        "bats": bats,
+        "SoC_init": SoC_init,
+        "bus_bat": bus_bat,
+        "bat_bus": bat_bus,
+        "sto_RoC": sto_RoC,
+        "sto_Ecap": sto_Ecap,
+        "sto_eff": sto_eff,
         "buses": list(all_nodes),
         "periods": periods,
         "p_max": p_max,

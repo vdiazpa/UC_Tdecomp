@@ -1,5 +1,5 @@
 
-from uc_tdecomp.RH_subp_build_t import build_RH_subprobs_t
+from uc_tdecomp.RH_subp_build import build_RH_subprobs
 from uc_tdecomp.data_extract import load_uc_data, load_csv_data
 from uc_tdecomp.bench_UC import benchmark_UC_build
 from time import perf_counter
@@ -9,7 +9,7 @@ import csv
 
 L = 4            # Lookahead
 F = 8            # Roll forward period
-T = 168          # length of planning horizon
+T = 72          # length of planning horizon
 prt_cry = False  # Print carryover constraints
 opt_gap = 0.05   # Optimality gap for monolithic solve
 
@@ -17,7 +17,7 @@ opt_gap = 0.05   # Optimality gap for monolithic solve
 #file_path  = "examples/unit_commitment/RTS_GMLC_zonal_noreserves.json"
 #file_path  = "examples/unit_commitment/tiny_RTS_ready.json"
 #data = load_uc_data(file_path)
-#data =  load_csv_data(T)
+data =  load_csv_data(T)
 ###################################################################################
 
 def RH_windows_fixes(T, F, L):
@@ -74,7 +74,7 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=Non
         if verbose:
             print(f"Window {i+1}/{len(windows)}: {window} | fix {fix_periods}")
 
-        result = build_RH_subprobs_t(data, window, init_states if i>0 else {}, fix_periods, print_carryover = prt_cry, 
+        result = build_RH_subprobs(data, window, init_states if i>0 else {}, fix_periods, print_carryover = prt_cry, 
                                      opt_gap = opt_gap, warm_start = warm_start, solver_seed=seed)
 
         warm_start  = result["warm_start"]
@@ -121,8 +121,8 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=Non
 
     return rh_time, ofv, fixed_sol
 
-# commitment, ofv, _ = run_RH(data, F = F, L = L, T = T, write_csv = True, opt_gap = opt_gap, verbose = True, benchmark=True)
-# print("OFV with RH according to function is: ", ofv)
+commitment, ofv, _ = run_RH(data, F = F, L = L, T = T, write_csv = True, opt_gap = opt_gap, verbose = True, benchmark=True)
+print("OFV with RH according to function is: ", ofv)
 
 
 def sweep_RH(data, T =T, F_vals = [4,8,12,16,20,24], L_vals = [4,8,12,16,20,24], seeds=(41,72,36, 65, 797), opt_gap = opt_gap, only_valid = False, csv_path = "rh_duke_results_EXP1.csv", verbose = False):

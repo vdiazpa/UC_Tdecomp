@@ -3,7 +3,7 @@ from pyomo.environ import *
 import numpy as np
 #from time import perf_counter
 
-def build_RH_subprobs_t(data, s_e, init_state, fixed, print_carryover = False, opt_gap=0.01, warm_start = None, solver_seed=None):
+def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt_gap=0.01, warm_start = None, solver_seed=None):
     
     #t0 = perf_counter()
     m = ConcreteModel()
@@ -20,6 +20,7 @@ def build_RH_subprobs_t(data, s_e, init_state, fixed, print_carryover = False, o
     m.RenewableGenerators = Set(initialize=data['ren_gens'],  ordered=True)
     m.Generators          = Set(initialize=data['gens'],      ordered=True)
     m.TransmissionLines   = Set(initialize=data['lines'],     ordered = True)
+    m.StorageUnits        = Set(initialize = data['bats'],       ordered=True)
     #m.CostSegments        = Set(initialize=range(1, data['n_segments']), ordered=True)  # number of piecewise cost segments
 
     # Parameters 
@@ -27,6 +28,8 @@ def build_RH_subprobs_t(data, s_e, init_state, fixed, print_carryover = False, o
     m.MinDownTime      = Param(m.ThermalGenerators, initialize = data['min_DT'])
     m.PowerGeneratedT0 = Param(m.ThermalGenerators, initialize = lambda m, g:(init_state.get('PowerGeneratedT0',{}).get(g,data['p_init'][g])) )   
     m.StatusAtT0       = Param(m.ThermalGenerators, initialize = lambda m, g:(init_state.get('StatusAtT0',      {}).get(g,data['init_status'][g])) ) 
+    m.SoCAtT0          = Param(m.StorageUnits,      initialize = lambda m, b:(init_state.get('SoCT0',           {}).get(b,data['SoC_init'][b])) ) 
+
     m.UnitOnT0         = Param(m.ThermalGenerators, initialize = lambda m, g: 1.0 if m.StatusAtT0[g] > 0 else 0.0)
     
     m.InitialTimePeriodsOnline = Param(m.ThermalGenerators, 
@@ -48,8 +51,13 @@ def build_RH_subprobs_t(data, s_e, init_state, fixed, print_carryover = False, o
     m.FlowCapacity          = Param(m.TransmissionLines, initialize = data['line_cap'])
     m.LineReactance         = Param(m.TransmissionLines, initialize = data['line_reac'])
 
+    m.Storage_RoC         = Param(m.StorageUnits, initialize = data['sto_RoC'])
+    m.Storage_EnergyCap   = Param(m.StorageUnits, initialize = data['sto_Ecap'])
+    m.Storage_Efficiency  = Param(m.StorageUnits, initialize = data['sto_eff'])
+
+
     # Variables & Bounds
-    m.PowerGenerated      = Var(m.Generators,        m.TimePeriods, within = NonNegativeReals )#bounds = lambda m, g, t: (0, m.MaximumPowerOutput[g]))
+    m.PowerGenerated      = Var(m.ThermalGenerators,  m.TimePeriods, within = NonNegativeReals )#bounds = lambda m, g, t: (0, m.MaximumPowerOutput[g]))
     #m.PowerCostVar        = Var(m.ThermalGenerators, m.TimePeriods, within = NonNegativeReals) 
     m.UnitOn              = Var(m.ThermalGenerators, m.TimePeriods, within = Binary)
     m.UnitStart           = Var(m.ThermalGenerators, m.TimePeriods, within = Binary)
@@ -57,6 +65,11 @@ def build_RH_subprobs_t(data, s_e, init_state, fixed, print_carryover = False, o
     m.V_Angle             = Var(  data['buses'],     m.TimePeriods, within = Reals, bounds = (-180, 180) )
     m.Flow                = Var(m.TransmissionLines, m.TimePeriods, within = Reals, bounds = lambda m, l, t: (-m.FlowCapacity[l], m.FlowCapacity[l]))
     m.LoadShed            = Var(data["load_buses"],  m.TimePeriods, within = NonNegativeReals)
+    m.SoC                 = Var(m.StorageUnits,      m.TimePeriods, within = NonNegativeReals, bounds = lambda m, b, t: (0, m.Storage_EnergyCap[b]) )
+    m.ChargePower         = Var(m.StorageUnits,      m.TimePeriods, within = NonNegativeReals, bounds = lambda m, b, t: (0, m.Storage_RoC[b] * m.Storage_EnergyCap[b]) )
+    m.DischargePower      = Var(m.StorageUnits,      m.TimePeriods, within = NonNegativeReals, bounds = lambda m, b, t: (0, m.Storage_RoC[b] * m.Storage_EnergyCap[b]) )
+    m.IsCharging          = Var(m.StorageUnits,      m.TimePeriods, within = Binary)
+    m.IsDischarging       = Var(m.StorageUnits,      m.TimePeriods, within = Binary)
 
     # Cosntraints
     m.MaxCap_thermal = Constraint(m.ThermalGenerators,  m.TimePeriods, rule=lambda m,g,t: m.PowerGenerated[g,t] <= m.MaximumPowerOutput[g]*m.UnitOn[g,t], doc= 'max_capacity_thermal')
@@ -68,18 +81,65 @@ def build_RH_subprobs_t(data, s_e, init_state, fixed, print_carryover = False, o
         flows   = sum(m.Flow[l,t] * data['lTb'][(l,b)] for l in data['lines_by_bus'][b])
         renew   = data['ren_bus_t'][(b,t)]
         shed    = m.LoadShed[b,t] if b in data["load_buses"] else 0.0
-        return thermal + flows + renew + shed >= data["demand"].get((b,t), 0.0)
+        storage = 0.0 if b not in data['bus_bat'] else sum( m.DischargePower[bat,t] * m.Storage_Efficiency[bat] - m.ChargePower[bat,t] for bat in data['bus_bat'][b]) 
+        
+        return thermal + flows + renew + shed + storage >= data["demand"].get((b,t), 0.0)
     
     m.NodalBalance = Constraint(data["buses"], range(m.InitialTime, t_fix1+1), rule = nb_rule)
 
     for t in m.TimePeriods:
         m.V_Angle[data["ref_bus"], t].fix(0.0)
  
+
+    # ====================================== Battery Energy Storage Constraints ====================================== #
+    
+    m.Storage_constraints = ConstraintList(doc = 'SoC_constraints')
+
+    if t_fix1 < m.FinalTime:
+        for b in m.StorageUnits:
+            for t in m.TimePeriods:
+                if t <= t_fix1:
+                    m.Storage_constraints.add( m.SoC[b,t] <= m.Storage_EnergyCap[b] )
+                    m.Storage_constraints.add( m.ChargePower[b,t] <= m.Storage_RoC[b] * m.IsCharging[b,t] )
+                    m.Storage_constraints.add( m.DischargePower[b,t] <= m.Storage_RoC[b] * m.IsDischarging[b,t] )
+                    m.Storage_constraints.add( m.IsCharging[b,t] + m.IsDischarging[b,t] <= 1 )
+                    
+                    if t == m.InitialTime:
+                        m.Storage_constraints.add( m.SoC[b,t] == m.SoCAtT0[b] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t] )
+                        m.Storage_constraints.add( m.ChargePower[b,t]*m.Storage_Efficiency[b] + m.SoCAtT0[b] <= m.Storage_EnergyCap[b] )  
+                    else:
+                        m.Storage_constraints.add( m.SoC[b,t] == m.SoC[b,t-1] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t] )  # SoC balance
+                        m.Storage_constraints.add( m.ChargePower[b,t]*m.Storage_Efficiency[b] + m.SoC[b,t-1] <= m.Storage_EnergyCap[b] )
+                else:
+                    #print("Relaxing SoC var for ", b, " at t = ", t, "will also relax some constraints")
+                    m.SoC[b,t].domain = NonNegativeReals
+                    m.IsCharging[b,t].domain = UnitInterval
+                    m.IsDischarging[b,t].domain = UnitInterval
+                    m.Storage_constraints.add(m.SoC[b,t] <= m.Storage_EnergyCap[b])
+                    m.Storage_constraints.add(m.IsCharging[b,t] + m.IsDischarging[b,t] <= 1)
+                    m.Storage_constraints.add(m.ChargePower[b,t] <= m.Storage_RoC[b] * m.Storage_EnergyCap[b])
+                    m.Storage_constraints.add(m.DischargePower[b,t] <= m.Storage_RoC[b] * m.Storage_EnergyCap[b])
+    else: 
+        for b in m.StorageUnits:
+            for t in m.TimePeriods:
+                m.Storage_constraints.add( m.SoC[b,t] <= m.Storage_EnergyCap[b] )
+                m.Storage_constraints.add( m.ChargePower[b,t] <= m.Storage_RoC[b] * m.IsCharging[b,t] )
+                m.Storage_constraints.add( m.DischargePower[b,t] <= m.Storage_RoC[b] * m.IsDischarging[b,t] )
+                m.Storage_constraints.add( m.IsCharging[b,t] + m.IsDischarging[b,t] <= 1 )
+                if t == m.InitialTime:
+                    m.Storage_constraints.add( m.SoC[b,t] == m.SoCAtT0[b] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t] )
+                    m.Storage_constraints.add( m.ChargePower[b,t]*m.Storage_Efficiency[b] + m.SoCAtT0[b] <= m.Storage_EnergyCap[b] )
+                else:
+                    m.Storage_constraints.add( m.SoC[b,t] == m.SoC[b,t-1] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t] )  # SoC balance
+                    m.Storage_constraints.add( m.ChargePower[b,t]*m.Storage_Efficiency[b] + m.SoC[b,t-1] <= m.Storage_EnergyCap[b] )
+                   
+                   
+    # ======================================= Ramping & Logical Constraints ======================================= #
+    
     m.RampDown_constraints = ConstraintList(doc = 'ramp_down')
     m.logical_constraints  = ConstraintList(doc = 'logical')
-    m.RampUp_constraints   = ConstraintList(doc = 'ramp_up')
-
-    # Add time-coupling constraints
+    m.RampUp_constraints   = ConstraintList(doc = 'ramp_up')     
+    
     if t_fix1 < m.FinalTime:
         for g in m.ThermalGenerators:
             for t in m.TimePeriods:
@@ -88,6 +148,7 @@ def build_RH_subprobs_t(data, s_e, init_state, fixed, print_carryover = False, o
                         m.logical_constraints.add(m.UnitStart[g,t] - m.UnitStop[g,t] == m.UnitOn[g,t] - m.UnitOnT0[g])
                         m.RampUp_constraints.add(m.PowerGenerated[g,t] - m.PowerGeneratedT0[g]<= m.NominalRampUpLimit[g] * m.UnitOnT0[g] + m.StartupRampLimit[g] * m.UnitStart[g,t])
                         m.RampDown_constraints.add(m.PowerGeneratedT0[g] - m.PowerGenerated[g,t]<= m.NominalRampDownLimit[g] * m.UnitOn[g,t] + m.ShutdownRampLimit[g] * m.UnitStop[g,t])
+                        
                     else:
                         m.logical_constraints.add(m.UnitStart[g,t] - m.UnitStop[g,t] == m.UnitOn[g,t] - m.UnitOn[g,t-1])
                         m.RampUp_constraints.add(m.PowerGenerated[g,t] - m.PowerGenerated[g,t-1]<= m.NominalRampUpLimit[g] * m.UnitOn[g,t-1] + m.StartupRampLimit[g] * m.UnitStart[g,t])
@@ -99,7 +160,7 @@ def build_RH_subprobs_t(data, s_e, init_state, fixed, print_carryover = False, o
                     m.UnitStop[g,t].fix(0)
 
                     if t != m.InitialTime:
-                        m.RampUp_constraints.add(m.PowerGenerated[g,t] - m.PowerGenerated[g,t-1]<= m.NominalRampUpLimit[g])     # simple bound; or Rup*UnitOn[g,t-1] if you prefer
+                        m.RampUp_constraints.add(m.PowerGenerated[g,t] - m.PowerGenerated[g,t-1]<= m.NominalRampUpLimit[g])     
                         m.RampDown_constraints.add(m.PowerGenerated[g,t-1] - m.PowerGenerated[g,t]<= m.NominalRampDownLimit[g])
     else: 
         for g in m.ThermalGenerators:
@@ -114,13 +175,12 @@ def build_RH_subprobs_t(data, s_e, init_state, fixed, print_carryover = False, o
                     m.RampUp_constraints.add(  m.PowerGenerated[g,t] - m.PowerGenerated[g,t-1] <= m.NominalRampUpLimit[g] * m.UnitOn[g,t-1] + m.StartupRampLimit[g]  * m.UnitStart[g,t])
                     m.RampDown_constraints.add(m.PowerGenerated[g,t-1] - m.PowerGenerated[g,t] <= m.NominalRampDownLimit[g] * m.UnitOn[g,t]  + m.ShutdownRampLimit[g] * m.UnitStop[g,t])
 
-
-    #UpTime Contraint Lists
+# ======================================= Minimum UpTime & DownTime Constraints ======================================= #
+   
     m.MinUpTime_constraints    = ConstraintList(doc='MinUpTime')
     m.MinDownTime_constraints  = ConstraintList(doc='MinDownTime')
     
     for g in m.ThermalGenerators:
-        # Carryover (same as you had)
         lg = min(W, int(m.InitialTimePeriodsOnline[g]))
         fg = min(W, int(m.InitialTimePeriodsOffline[g]))
 
@@ -245,13 +305,14 @@ def build_RH_subprobs_t(data, s_e, init_state, fixed, print_carryover = False, o
             else: 
                 status_dict[g] = -streak
 
-    InitialState = {'PowerGeneratedT0':{ g: value(m.PowerGenerated[g, t_roll]) for g in m.ThermalGenerators }, 'StatusAtT0': status_dict}
+    InitialState = {'PowerGeneratedT0':{ g: value(m.PowerGenerated[g, t_roll]) for g in m.ThermalGenerators }, 'StatusAtT0': status_dict, 'SoCT0': { b: value(m.SoC[b, t_roll]) for b in m.StorageUnits } }
 
     return_object = {'InitialState':InitialState, 
                      'vars':  {  'PowerGenerated': {(g,t): value(m.PowerGenerated[g,t]) for g in m.ThermalGenerators for t in range(m.InitialTime, t_roll+1)}, 
                                          'UnitOn': {(g,t): value(m.UnitOn[g,t])         for g in m.ThermalGenerators for t in range(m.InitialTime, t_roll+1)},
                                       'UnitStart': {(g,t): value(m.UnitStart[g,t])      for g in m.ThermalGenerators for t in range(m.InitialTime, t_roll+1)},
-                                       'UnitStop': {(g,t): value(m.UnitStop[g,t])       for g in m.ThermalGenerators for t in range(m.InitialTime, t_roll+1)} } ,
+                                       'UnitStop': {(g,t): value(m.UnitStop[g,t])       for g in m.ThermalGenerators for t in range(m.InitialTime, t_roll+1)},
+                                            'SoC': {(b,t): value(m.SoC[b, t])           for b in m.StorageUnits      for t in range(m.InitialTime, t_roll+1)}} ,
 
                         'warm_start': {'PowerGenerated': {(g,t): value(m.PowerGenerated[g,t]) for g in m.ThermalGenerators  for t in range(t_roll+1, m.FinalTime+1)}, 
                                         # 'UnitOn': {(g,t): value(m.UnitOn[g,t])               for g in m.ThermalGenerators for t in range(t_roll+1, m.FinalTime+1)},

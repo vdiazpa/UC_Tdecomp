@@ -106,7 +106,6 @@ def build_subprobs_t(data, s_e, index_set):
     
     m.NodalBalance = Constraint(data["buses"], m.TimePeriods, rule = nb_rule)
 
-
     for t in m.TimePeriods:
         m.V_Angle[data["ref_bus"], t].fix(0.0)
 
@@ -204,12 +203,6 @@ def build_subprobs_t(data, s_e, index_set):
         m.Objective = Objective(rule=ofv, sense=minimize)
 
     return m
-
-
-
-
-
-
 
 
 

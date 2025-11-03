@@ -1,5 +1,5 @@
 
-from uc_tdecomp.LR_subp_build_t import build_subprobs_t
+from uc_tdecomp.LR_subp_build import build_subprobs_tt
 from uc_tdecomp.data_extract import load_uc_data, load_csv_data
 from pyomo.environ import *
 from time import perf_counter
@@ -30,7 +30,8 @@ def solve_and_return(m, opt, k):
                 'PowerGenerated':  {(g,t): value(m.PowerGenerated[g,t])  for g in m.ThermalGenerators for t in m.TimePeriods },
                 'UnitOn':          {(g,t): value(m.UnitOn[g,t])          for g in m.ThermalGenerators for t in m.TimePeriods}, 
                 'UT_Obl_end':      {(g,t): value(m.UT_Obl_end[g,t])      for g in m.ThermalGenerators for t in m.Max_t},
-                'DT_Obl_end':      {(g,t): value(m.DT_Obl_end[g,t])      for g in m.ThermalGenerators for t in m.Max_t}}}
+                'DT_Obl_end':      {(g,t): value(m.DT_Obl_end[g,t])      for g in m.ThermalGenerators for t in m.Max_t},
+                'SoC':             {(b,t): value(m.SoC[b,t])             for b in m.StorageUnits      for t in m.Max_t}}}
     else: 
         return_object = {  'ofv': value(m.Objective), 
             'vars': {
@@ -41,7 +42,9 @@ def solve_and_return(m, opt, k):
                 'UT_Obl_copy':         {(g,t): value(m.UT_Obl_copy[g,t])         for g in m.ThermalGenerators for t in m.Min_t},
                 'DT_Obl_copy':         {(g,t): value(m.DT_Obl_copy[g,t])         for g in m.ThermalGenerators for t in m.Min_t},
                 'PowerGenerated':      {(g,t): value(m.PowerGenerated[g,t])      for g in m.ThermalGenerators for t in m.TimePeriods },
-                'UnitOn':              {(g,t): value(m.UnitOn[g,t])              for g in m.ThermalGenerators for t in m.TimePeriods }}}
+                'UnitOn':              {(g,t): value(m.UnitOn[g,t])              for g in m.ThermalGenerators for t in m.TimePeriods },
+                'SoC_copy':            {(b,t): value(m.SoC_copy[b,t])            for b in m.StorageUnits      for t in m.Min_t},
+                'SoC':                 {(b,t): value(m.SoC[b,t])                 for b in m.StorageUnits      for t in m.Max_t}}}
         
     # if k ==1:
     #     m.write(f'm.{str(s_e)}_{k}.lp', io_options = {'symbolic_solver_labels': True})
@@ -64,6 +67,7 @@ def get_lagrange_and_g(results_obj, T_windows):
 
     for i in range(N):
         ofv_total +=results_obj[i]['ofv'] # sums all objective functions
+        
     for g in ther_gens: 
         for k in ['UnitOn', 'PowerGenerated', 'DT_Obl', 'UT_Obl']:
             if k == 'UnitOn' or k == 'PowerGenerated':
@@ -72,6 +76,10 @@ def get_lagrange_and_g(results_obj, T_windows):
             else:
                 for i, t in enumerate(times):
                     g_vec[(g, t, k)] = results_obj[i]['vars'][f'{k}_end'][(g,t)] - results_obj[i+1]['vars'][f'{k}_copy'][(g,t)]
+                    
+    for b in bats:
+        for i, t in enumerate(times):
+            g_vec[(b, t, 'SoC')] = results_obj[i]['vars']['SoC'][(b,t)] - results_obj[i+1]['vars']['SoC_copy'][(b,t)]
 
     return ofv_total, g_vec
 
@@ -89,7 +97,7 @@ def solver_function(task):
 
     # Build & cache model+solver for this subproblem the first time we see it
     if sub_id not in MODEL_CACHE:
-        m = build_subprobs_t(DATA, TIME_WINDOWS[sub_id], index_set=INDEX_SET)
+        m = build_subprobs_tt(DATA, TIME_WINDOWS[sub_id], index_set=INDEX_SET)
         opt = SolverFactory('gurobi_persistent')
         opt.options['OutputFlag'] = 0
         opt.options['Presolve'] = 2
@@ -120,6 +128,7 @@ if __name__ == "__main__":
     #file_path  = "examples/unit_commitment/RTS_GMLC_zonal_noreserves.json"
     #data        = load_uc_data(file_path)
     data        = load_csv_data(T)
+    bats        = data["bats"]
     ther_gens   = data["ther_gens"]
     num_periods = len(data["periods"])
     
@@ -131,9 +140,9 @@ if __name__ == "__main__":
     
     print("num_periods:", num_periods, "\n", "Window size:", subn , "\n", "# of windows (subproblems):", len(Time_windows) )
 
-    #============================================================ SET INIT LAMBDA VALUES ====
+    #============================================================ Initial Lambdas / Index Set ====
     
-    pow_pnlty, commit_pnlty, UT_pnlty, DT_pnlty = 35, 30, 40, 32
+    pow_pnlty, commit_pnlty, UT_pnlty, DT_pnlty, soc_pnlty = 35, 30, 40, 32, 25
     index_set = set()
     l = {}
     
@@ -141,7 +150,9 @@ if __name__ == "__main__":
         for var in ['UnitOn', 'PowerGenerated', 'DT_Obl', 'UT_Obl']:
             for g in ther_gens: 
                     index_set.add((g, i, var))
-   
+        for b in bats:
+            index_set.add((b,i,'SoC'))
+            
     for key in index_set:
         if 'UnitOn' in key:
             l[key] = commit_pnlty
@@ -149,10 +160,12 @@ if __name__ == "__main__":
             l[key] = pow_pnlty
         elif 'DT_Obl' in key:
             l[key] = DT_pnlty
+        elif 'SoC' in key:
+            l[key] = soc_pnlty
         else:
             l[key] = UT_pnlty
 
-    #=========================================================== Initialize Pool Process ======
+    #==========================================================# Initialize Pool Process #=======
 
     t_all_start = perf_counter()
     pool = Pool(processes=len(Time_windows), initializer = init_globals, initargs = (data, Time_windows, index_set))
@@ -165,13 +178,13 @@ if __name__ == "__main__":
     if T == 168: 
         q0 = 2471099193.65292
     else: 
-        q0 = 1021672097.99475
+        #q0 = 1021672097.99475 #w/o storage
+        q0 =  1148691695.01 #w/ storage
         
     t_after_init = perf_counter()
-    print(f"\nInitial build and solve time: {t_after_init - t_all_start:.3f} secs")
-    print("qbar is: ", f"{q0:.2f}", '\n', "Dual Value is", f"{Lag0:.2f}")
+    print(f"\nInitial build and solve time: {t_after_init - t_all_start:.3f} secs", "\nqbar is: ", f"{q0:.2f}", '\n', "Dual Value is", f"{Lag0:.2f}")
 
-    #===================================================================== Initialize Main Loop ======
+    #==========================================================# Initialize Main Loop #==========
     # gamma      = 1/num_sh   
     max_iters    = 30
     gamma        = 0.5
@@ -205,12 +218,12 @@ if __name__ == "__main__":
         t0 = perf_counter()
         if k > 0:
             tasks   = [(i, l, k) for i in range(len(Time_windows))]
-            results = pool.map(solver_function, tasks)            # solves and stores
+            results = pool.map(solver_function, tasks)                 # solves and stores
             Lag, g  = get_lagrange_and_g(results, Time_windows)
             L_best  = max(L_best, Lag)
+            gap_pct = 100.0 * (UB - L_best) / abs(UB)
             Best_lag.append(L_best)
             Lag_set.append(Lag); g_set.append(g)
-            gap_pct = 100.0 * (UB - L_best) / abs(UB)
         else:
             Lag, g = Lag0, g0
 
@@ -287,14 +300,9 @@ if __name__ == "__main__":
     iters = np.arange(len(dual))
 
     plt.figure()
-
-    # Solid blue for L_best
     plt.plot(iters, lbest, label='Best Lagrangian (running max)', color='C1', linestyle='--')
-
-    # Orange dashed for Dual
     plt.plot(iters, dual,  label='Dual at iteration k', color='C0', linestyle='-')
 
-    # (optional) Level line in green
     level = np.array(Level_vals[:len(dual)])
     plt.plot(iters, level, label='Level Value', color='C2')
 

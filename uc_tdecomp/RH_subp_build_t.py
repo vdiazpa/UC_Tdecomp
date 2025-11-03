@@ -19,7 +19,9 @@ def build_RH_subprobs_t(data, s_e, init_state, fixed, print_carryover = False, o
     m.ThermalGenerators   = Set(initialize=data['ther_gens'], ordered=True)
     m.RenewableGenerators = Set(initialize=data['ren_gens'],  ordered=True)
     m.Generators          = Set(initialize=data['gens'],      ordered=True)
-    m.TransmissionLines   = Set(initialize=data['lines'],     ordered = True)
+    m.TransmissionLines   = Set(initialize=data['lines'],     ordered=True)
+    m.StorageUnits        = Set(initialize=data['bats'],      ordered=True)
+
     #m.CostSegments        = Set(initialize=range(1, data['n_segments']), ordered=True)  # number of piecewise cost segments
 
     # Parameters 
@@ -47,6 +49,9 @@ def build_RH_subprobs_t(data, s_e, init_state, fixed, print_carryover = False, o
     m.ShutdownRampLimit     = Param(m.ThermalGenerators, initialize = data['sdR'])
     m.FlowCapacity          = Param(m.TransmissionLines, initialize = data['line_cap'])
     m.LineReactance         = Param(m.TransmissionLines, initialize = data['line_reac'])
+    m.Storage_RoC           = Param(m.StorageUnits,      initialize = data['sto_RoC'])
+    m.Storage_EnergyCap     = Param(m.StorageUnits,      initialize = data['sto_Ecap'])
+    m.Storage_Efficiency    = Param(m.StorageUnits,      initialize = data['sto_eff'])
 
     # Variables & Bounds
     m.PowerGenerated      = Var(m.Generators,        m.TimePeriods, within = NonNegativeReals )#bounds = lambda m, g, t: (0, m.MaximumPowerOutput[g]))
@@ -57,6 +62,11 @@ def build_RH_subprobs_t(data, s_e, init_state, fixed, print_carryover = False, o
     m.V_Angle             = Var(  data['buses'],     m.TimePeriods, within = Reals, bounds = (-180, 180) )
     m.Flow                = Var(m.TransmissionLines, m.TimePeriods, within = Reals, bounds = lambda m, l, t: (-m.FlowCapacity[l], m.FlowCapacity[l]))
     m.LoadShed            = Var(data["load_buses"],  m.TimePeriods, within = NonNegativeReals)
+    m.SoC                 = Var(m.StorageUnits,      m.TimePeriods, within = NonNegativeReals, bounds = lambda m, b, t: (0, m.Storage_EnergyCap[b]) )
+    m.ChargePower         = Var(m.StorageUnits,      m.TimePeriods, within = NonNegativeReals, bounds = lambda m, b, t: (0, m.Storage_RoC[b] * m.Storage_EnergyCap[b]) )
+    m.DischargePower      = Var(m.StorageUnits,      m.TimePeriods, within = NonNegativeReals, bounds = lambda m, b, t: (0, m.Storage_RoC[b] * m.Storage_EnergyCap[b]) )
+    m.IsCharging          = Var(m.StorageUnits,      m.TimePeriods, within = Binary)
+    m.IsDischarging       = Var(m.StorageUnits,      m.TimePeriods, within = Binary)
 
     # Cosntraints
     m.MaxCap_thermal = Constraint(m.ThermalGenerators,  m.TimePeriods, rule=lambda m,g,t: m.PowerGenerated[g,t] <= m.MaximumPowerOutput[g]*m.UnitOn[g,t], doc= 'max_capacity_thermal')
@@ -120,7 +130,6 @@ def build_RH_subprobs_t(data, s_e, init_state, fixed, print_carryover = False, o
     m.MinDownTime_constraints  = ConstraintList(doc='MinDownTime')
     
     for g in m.ThermalGenerators:
-        # Carryover (same as you had)
         lg = min(W, int(m.InitialTimePeriodsOnline[g]))
         fg = min(W, int(m.InitialTimePeriodsOffline[g]))
 

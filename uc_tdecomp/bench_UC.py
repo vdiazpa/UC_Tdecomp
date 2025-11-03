@@ -28,6 +28,8 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False):
     m.RenewableGenerators = Set(initialize=data['ren_gens'],  ordered=True)
     m.Generators          = Set(initialize=data['gens'],      ordered=True)
     m.TransmissionLines   = Set(initialize=data['lines'],     ordered=True)
+    m.StorageUnits        = Set(initialize = data['bats'], ordered=True)
+
     #m.CostSegments        = Set(initialize=range(1, data['n_segments']), ordered=True)  # number of piecewise cost segments
 
     W_full  = m.FinalTime - m.InitialTime + 1
@@ -45,18 +47,21 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False):
     m.InitialTimePeriodsOffline =  Param(m.ThermalGenerators, 
                                         initialize = lambda m, g: (min(W_full, max(0, int(m.MinDownTime[g]) - abs(int(m.StatusAtT0[g])))) if m.StatusAtT0[g] < 0 else 0))
     
-    m.MaximumPowerOutput     = Param(m.ThermalGenerators,   initialize=data['p_max'])
-    m.MinimumPowerOutput     = Param(m.ThermalGenerators,   initialize=data['p_min'])
-    m.RenewableOutput        = Param(m.RenewableGenerators, data["periods"], initialize=data['ren_output'])
-    m.CommitmentCost         = Param(m.ThermalGenerators,   initialize=data['commit_cost'])
-    m.StartUpCost            = Param(m.ThermalGenerators,   initialize=data['startup_cost'])
+    m.MaximumPowerOutput    = Param(m.ThermalGenerators,   initialize=data['p_max'])
+    m.MinimumPowerOutput    = Param(m.ThermalGenerators,   initialize=data['p_min'])
+    m.RenewableOutput       = Param(m.RenewableGenerators, data["periods"], initialize=data['ren_output'])
+    m.CommitmentCost        = Param(m.ThermalGenerators,   initialize=data['commit_cost'])
+    m.StartUpCost           = Param(m.ThermalGenerators,   initialize=data['startup_cost'])
     #m.ShutDownCost           = Param(m.ThermalGenerators,   initialize=data['shutdown_cost'])
-    m.NominalRampUpLimit     = Param(m.ThermalGenerators,   initialize=data['rup'])
-    m.NominalRampDownLimit   = Param(m.ThermalGenerators,   initialize=data['rdn'])
-    m.StartupRampLimit       = Param(m.ThermalGenerators,   initialize=data['suR'])
-    m.ShutdownRampLimit      = Param(m.ThermalGenerators,   initialize=data['sdR'])
-    m.FlowCapacity           = Param(m.TransmissionLines,   initialize = data['line_cap'])
-    m.LineReactance          = Param(m.TransmissionLines,   initialize = data['line_reac'])
+    m.NominalRampUpLimit    = Param(m.ThermalGenerators,   initialize=data['rup'])
+    m.NominalRampDownLimit  = Param(m.ThermalGenerators,   initialize=data['rdn'])
+    m.StartupRampLimit      = Param(m.ThermalGenerators,   initialize=data['suR'])
+    m.ShutdownRampLimit     = Param(m.ThermalGenerators,   initialize=data['sdR'])
+    m.FlowCapacity          = Param(m.TransmissionLines,   initialize = data['line_cap'])
+    m.LineReactance         = Param(m.TransmissionLines,   initialize = data['line_reac'])
+    m.Storage_RoC           = Param(m.StorageUnits,        initialize = data['sto_RoC'])
+    m.Storage_EnergyCap     = Param(m.StorageUnits,        initialize = data['sto_Ecap'])
+    m.Storage_Efficiency    = Param(m.StorageUnits,        initialize = data['sto_eff'])
 
     # Variables & Bounds
     m.PowerGenerated      = Var(m.ThermalGenerators, m.TimePeriods, within=NonNegativeReals) 
@@ -66,10 +71,15 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False):
     m.UnitOn              = Var(m.ThermalGenerators, m.TimePeriods, within=Binary)
     m.UnitStart           = Var(m.ThermalGenerators, m.TimePeriods, within=Binary)
     m.UnitStop            = Var(m.ThermalGenerators, m.TimePeriods, within=Binary)
-    m.V_Angle             = Var(  data['buses'],     m.TimePeriods, within = Reals, bounds = (-180, 180) )
+    m.V_Angle             = Var(data['buses'],       m.TimePeriods, within = Reals, bounds = (-180, 180) )
     m.Flow                = Var(m.TransmissionLines, m.TimePeriods, within = Reals, bounds = lambda m, l, t: (-value(m.FlowCapacity[l]), value(m.FlowCapacity[l])))
-    m.LoadShed            = Var(data["load_buses"], m.TimePeriods, within = NonNegativeReals)
-    
+    m.LoadShed            = Var(data["load_buses"],  m.TimePeriods, within = NonNegativeReals)
+    m.SoC                 = Var(m.StorageUnits,      m.TimePeriods, within = NonNegativeReals, bounds = lambda m, b, t: (0, m.Storage_EnergyCap[b]) )
+    m.ChargePower         = Var(m.StorageUnits,      m.TimePeriods, within = NonNegativeReals, bounds = lambda m, b, t: (0, m.Storage_RoC[b] * m.Storage_EnergyCap[b]) )
+    m.DischargePower      = Var(m.StorageUnits,      m.TimePeriods, within = NonNegativeReals, bounds = lambda m, b, t: (0, m.Storage_RoC[b] * m.Storage_EnergyCap[b]) )
+    m.IsCharging          = Var(m.StorageUnits,      m.TimePeriods, within = Binary)
+    m.IsDischarging       = Var(m.StorageUnits,      m.TimePeriods, within = Binary)
+
     # Constraints
     m.MaxCapacity_thermal = Constraint(m.ThermalGenerators,  m.TimePeriods, rule=lambda m,g,t: m.PowerGenerated[g,t] <= m.MaximumPowerOutput[g]*m.UnitOn[g,t], doc= 'max_capacity_thermal')
     m.MinCapacity_thermal = Constraint(m.ThermalGenerators,  m.TimePeriods, rule=lambda m,g,t: m.PowerGenerated[g,t] >= m.MinimumPowerOutput[g]*m.UnitOn[g,t], doc= 'min_capacity_thermal')
@@ -81,7 +91,8 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False):
         flows   = sum(m.Flow[l,t] * data['lTb'][(l,b)] for l in data['lines_by_bus'][b])
         renew   = data['ren_bus_t'][(b,t)]
         shed    = m.LoadShed[b,t] if b in data["load_buses"] else 0.0
-        return thermal + flows + renew + shed >= data["demand"].get((b,t), 0.0)
+        storage = 0.0 if b not in data['bus_bat'] else sum( m.DischargePower[bat,t] * m.Storage_Efficiency[bat] - m.ChargePower[bat,t] for bat in data['bus_bat'][b]) 
+        return thermal + flows + renew + shed + storage >= data["demand"].get((b,t), 0.0)
     
     m.NodalBalance = Constraint(data["buses"], m.TimePeriods, rule = nb_rule)
 
@@ -93,12 +104,13 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False):
     m.RampDown_constraints = ConstraintList(doc = 'ramp_down')
     m.UTRemain_constraints = ConstraintList(doc = 'UT_remain')
     m.DTRemain_constraints = ConstraintList(doc = 'DT_remain')
-    
+
     # Add time-coupling constraints
     for g in m.ThermalGenerators:
         for t in m.TimePeriods: 
             m.UTRemain_constraints.add( m.UTRemain[g,t] <= m.MinUpTime[g] * m.UnitOn[g,t]) 
             m.DTRemain_constraints.add( m.DTRemain[g,t] <= m.MinDownTime[g] * (1 - m.UnitOn[g,t]))
+            
             
             if t == m.InitialTime:
                 m.logical_constraints.add(m.UnitStart[g,t] - m.UnitStop[g,t] == m.UnitOn[g,t] - m.UnitOnT0[g])
@@ -145,7 +157,24 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False):
     #         valid_tt = [tt for tt in range(t, t + hg) if tt in m.TimePeriods]
     #         m.MinDownTime_constraints.add( sum(m.UnitOn[g,tt] for tt in valid_tt) <= (1 - m.UnitStop[g,t]) * hg )
     
-    
+    m.SOC_constraints = ConstraintList(doc = 'SoC_constraints')
+    for b in m.StorageUnits:
+        for t in m.TimePeriods:
+            # SoC balance
+            if t == m.InitialTime:
+                m.SOC_constraints.add( m.SoC[b,t] == m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t])
+                m.SOC_constraints.add( m.ChargePower[b,t]*m.Storage_Efficiency[b] <= m.Storage_EnergyCap[b] )
+
+            else:
+                m.SOC_constraints.add( m.SoC[b,t] == m.SoC[b,t-1] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t] )
+                m.SOC_constraints.add( m.ChargePower[b,t]*m.Storage_Efficiency[b] + m.SoC[b,t-1] <= m.Storage_EnergyCap[b] )
+            
+            # Charging/Discharging logic
+            m.SOC_constraints.add( m.SoC[b,t] <= m.Storage_EnergyCap[b] )
+            m.SOC_constraints.add( m.ChargePower[b,t] <= m.Storage_RoC[b] * m.Storage_EnergyCap[b] * m.IsCharging[b,t] )
+            m.SOC_constraints.add( m.DischargePower[b,t] <= m.Storage_RoC[b] * m.Storage_EnergyCap[b] * m.IsDischarging[b,t] )
+            m.SOC_constraints.add( m.IsCharging[b,t] + m.IsDischarging[b,t] <= 1 )
+            
     if fixed_commitment:
         print('fixing inputed variable values')
         for (g, t), val in fixed_commitment['UnitOn'].items():
@@ -238,4 +267,4 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False):
     return return_object
 
         
-#x = benchmark_UC_build(data, opt_gap=0.01)
+#x = benchmark_UC_build(data, opt_gap=0.1)
