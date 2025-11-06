@@ -58,6 +58,7 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt
 
     # Variables & Bounds
     m.PowerGenerated      = Var(m.ThermalGenerators,  m.TimePeriods, within = NonNegativeReals )#bounds = lambda m, g, t: (0, m.MaximumPowerOutput[g]))
+    m.RenPowerGenerated   = Var(m.RenewableGenerators, m.TimePeriods, within=NonNegativeReals) 
     #m.PowerCostVar        = Var(m.ThermalGenerators, m.TimePeriods, within = NonNegativeReals) 
     m.UnitOn              = Var(m.ThermalGenerators, m.TimePeriods, within = Binary)
     m.UnitStart           = Var(m.ThermalGenerators, m.TimePeriods, within = Binary)
@@ -66,30 +67,30 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt
     m.Flow                = Var(m.TransmissionLines, m.TimePeriods, within = Reals, bounds = lambda m, l, t: (-m.FlowCapacity[l], m.FlowCapacity[l]))
     m.LoadShed            = Var(data["load_buses"],  m.TimePeriods, within = NonNegativeReals)
     m.SoC                 = Var(m.StorageUnits,      m.TimePeriods, within = NonNegativeReals, bounds = lambda m, b, t: (0, m.Storage_EnergyCap[b]) )
-    m.ChargePower         = Var(m.StorageUnits,      m.TimePeriods, within = NonNegativeReals, bounds = lambda m, b, t: (0, m.Storage_RoC[b] * m.Storage_EnergyCap[b]) )
-    m.DischargePower      = Var(m.StorageUnits,      m.TimePeriods, within = NonNegativeReals, bounds = lambda m, b, t: (0, m.Storage_RoC[b] * m.Storage_EnergyCap[b]) )
+    m.ChargePower         = Var(m.StorageUnits,      m.TimePeriods, within = NonNegativeReals, bounds = lambda m, b, t: (0, m.Storage_RoC[b]) )
+    m.DischargePower      = Var(m.StorageUnits,      m.TimePeriods, within = NonNegativeReals, bounds = lambda m, b, t: (0, m.Storage_RoC[b]) )
     m.IsCharging          = Var(m.StorageUnits,      m.TimePeriods, within = Binary)
     m.IsDischarging       = Var(m.StorageUnits,      m.TimePeriods, within = Binary)
 
-    # Cosntraints
-    m.MaxCap_thermal = Constraint(m.ThermalGenerators,  m.TimePeriods, rule=lambda m,g,t: m.PowerGenerated[g,t] <= m.MaximumPowerOutput[g]*m.UnitOn[g,t], doc= 'max_capacity_thermal')
-    m.MinCap_thermal = Constraint(m.ThermalGenerators,  m.TimePeriods, rule=lambda m,g,t: m.PowerGenerated[g,t] >= m.MinimumPowerOutput[g]*m.UnitOn[g,t], doc= 'min_capacity_thermal')
-    m.Power_Flow     = Constraint(m.TransmissionLines,  m.TimePeriods, rule=lambda m,l,t: m.Flow[l,t]*m.LineReactance[l]==m.V_Angle[data["line_ep"][l][0],t]-m.V_Angle[data["line_ep"][l][1],t], doc='Power_flow')
+    # ======================================= Single-period constraints ======================================= #
+
+    m.MaxCap_thermal     = Constraint(m.ThermalGenerators,  m.TimePeriods, rule=lambda m,g,t: m.PowerGenerated[g,t] <= m.MaximumPowerOutput[g]*m.UnitOn[g,t], doc= 'max_capacity_thermal')
+    m.MinCap_thermal     = Constraint(m.ThermalGenerators,  m.TimePeriods, rule=lambda m,g,t: m.PowerGenerated[g,t] >= m.MinimumPowerOutput[g]*m.UnitOn[g,t], doc= 'min_capacity_thermal')
+    m.Power_Flow         = Constraint(m.TransmissionLines,  m.TimePeriods, rule=lambda m,l,t: m.Flow[l,t]*m.LineReactance[l]==m.V_Angle[data["line_ep"][l][0],t]-m.V_Angle[data["line_ep"][l][1],t], doc='Power_flow')
+    m.MaxCapacity_renew  = Constraint(m.RenewableGenerators, m.TimePeriods, rule=lambda m,g,t: m.RenPowerGenerated[g,t] <= m.RenewableOutput[(g,t)], doc= 'renewable_output')
 
     def nb_rule(m,b,t):
         thermal = sum(m.PowerGenerated[g,t] for g in data["ther_gens_by_bus"][b]) if b in data["ther_gens_by_bus"] else 0.0
         flows   = sum(m.Flow[l,t] * data['lTb'][(l,b)] for l in data['lines_by_bus'][b])
-        renew   = data['ren_bus_t'][(b,t)]
+        renew   = 0.0 if b not in data['bus_ren_dict'] else sum(m.RenPowerGenerated[g,t] for g in data['bus_ren_dict'][b])
         shed    = m.LoadShed[b,t] if b in data["load_buses"] else 0.0
-        storage = 0.0 if b not in data['bus_bat'] else sum( m.DischargePower[bat,t] * m.Storage_Efficiency[bat] - m.ChargePower[bat,t] for bat in data['bus_bat'][b]) 
-        
-        return thermal + flows + renew + shed + storage >= data["demand"].get((b,t), 0.0)
+        storage = 0.0 if b not in data['bus_bat'] else sum(m.DischargePower[bat,t] - m.ChargePower[bat,t] for bat in data['bus_bat'][b])
+        return thermal + flows + renew + shed + storage == data["demand"].get((b,t), 0.0)
     
     m.NodalBalance = Constraint(data["buses"], range(m.InitialTime, t_fix1+1), rule = nb_rule)
 
     for t in m.TimePeriods:
         m.V_Angle[data["ref_bus"], t].fix(0.0)
- 
 
     # ====================================== Battery Energy Storage Constraints ====================================== #
     
@@ -99,40 +100,32 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt
         for b in m.StorageUnits:
             for t in m.TimePeriods:
                 if t <= t_fix1:
-                    m.Storage_constraints.add( m.SoC[b,t] <= m.Storage_EnergyCap[b] )
                     m.Storage_constraints.add( m.ChargePower[b,t] <= m.Storage_RoC[b] * m.IsCharging[b,t] )
                     m.Storage_constraints.add( m.DischargePower[b,t] <= m.Storage_RoC[b] * m.IsDischarging[b,t] )
                     m.Storage_constraints.add( m.IsCharging[b,t] + m.IsDischarging[b,t] <= 1 )
                     
                     if t == m.InitialTime:
-                        m.Storage_constraints.add( m.SoC[b,t] == m.SoCAtT0[b] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t] )
-                        m.Storage_constraints.add( m.ChargePower[b,t]*m.Storage_Efficiency[b] + m.SoCAtT0[b] <= m.Storage_EnergyCap[b] )  
+                        m.Storage_constraints.add( m.SoC[b,t] == m.SoCAtT0[b] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t]/m.Storage_Efficiency[b] )
                     else:
-                        m.Storage_constraints.add( m.SoC[b,t] == m.SoC[b,t-1] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t] )  # SoC balance
-                        m.Storage_constraints.add( m.ChargePower[b,t]*m.Storage_Efficiency[b] + m.SoC[b,t-1] <= m.Storage_EnergyCap[b] )
+                        m.Storage_constraints.add( m.SoC[b,t] == m.SoC[b,t-1] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t]/m.Storage_Efficiency[b] )  # SoC balance
                 else:
                     #print("Relaxing SoC var for ", b, " at t = ", t, "will also relax some constraints")
                     m.SoC[b,t].domain = NonNegativeReals
                     m.IsCharging[b,t].domain = UnitInterval
                     m.IsDischarging[b,t].domain = UnitInterval
-                    m.Storage_constraints.add(m.SoC[b,t] <= m.Storage_EnergyCap[b])
                     m.Storage_constraints.add(m.IsCharging[b,t] + m.IsDischarging[b,t] <= 1)
-                    m.Storage_constraints.add(m.ChargePower[b,t] <= m.Storage_RoC[b] * m.Storage_EnergyCap[b])
-                    m.Storage_constraints.add(m.DischargePower[b,t] <= m.Storage_RoC[b] * m.Storage_EnergyCap[b])
+                    m.Storage_constraints.add(   m.ChargePower[b,t] <= m.Storage_RoC[b]* m.IsCharging[b,t] )
+                    m.Storage_constraints.add(m.DischargePower[b,t] <= m.Storage_RoC[b]* m.IsDischarging[b,t])
     else: 
         for b in m.StorageUnits:
             for t in m.TimePeriods:
-                m.Storage_constraints.add( m.SoC[b,t] <= m.Storage_EnergyCap[b] )
-                m.Storage_constraints.add( m.ChargePower[b,t] <= m.Storage_RoC[b] * m.IsCharging[b,t] )
+                m.Storage_constraints.add(    m.ChargePower[b,t] <= m.Storage_RoC[b] * m.IsCharging[b,t] )
                 m.Storage_constraints.add( m.DischargePower[b,t] <= m.Storage_RoC[b] * m.IsDischarging[b,t] )
-                m.Storage_constraints.add( m.IsCharging[b,t] + m.IsDischarging[b,t] <= 1 )
+                m.Storage_constraints.add(  m.IsCharging[b,t] + m.IsDischarging[b,t] <= 1 )
                 if t == m.InitialTime:
-                    m.Storage_constraints.add( m.SoC[b,t] == m.SoCAtT0[b] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t] )
-                    m.Storage_constraints.add( m.ChargePower[b,t]*m.Storage_Efficiency[b] + m.SoCAtT0[b] <= m.Storage_EnergyCap[b] )
+                    m.Storage_constraints.add( m.SoC[b,t] == m.SoCAtT0[b] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t]/m.Storage_Efficiency[b] )
                 else:
-                    m.Storage_constraints.add( m.SoC[b,t] == m.SoC[b,t-1] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t] )  # SoC balance
-                    m.Storage_constraints.add( m.ChargePower[b,t]*m.Storage_Efficiency[b] + m.SoC[b,t-1] <= m.Storage_EnergyCap[b] )
-                   
+                    m.Storage_constraints.add( m.SoC[b,t] == m.SoC[b,t-1] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t]/m.Storage_Efficiency[b] )  # SoC balance                   
                    
     # ======================================= Ramping & Logical Constraints ======================================= #
     
@@ -205,21 +198,24 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt
             if valid_tt:
                 m.MinDownTime_constraints.add(sum((1 - m.UnitOn[g,tt]) for tt in valid_tt) >= m.UnitStop[g,t] * hg)
 
-
     # Cost constraint
     # m.PiecewiseCost = Constraint(m.ThermalGenerators, m.TimePeriods, m.CostSegments, rule=lambda m, g, t, s:
     #     m.PowerCostVar[g, t] >= (m.PowerGenerated[g, t] * data['slp'][g][s-1]) + (m.UnitOn[g, t] * data['intc'][g][s-1]) )
 
+    m.TimePrice = Param(m.TimePeriods, initialize=lambda m, t: 20.0 if (int(t) % 24) in (16, 17, 18, 19, 20) else 5.0)
+
     # Objective
     def ofv(m):
-        start_cost = sum( m.StartUpCost[g] * m.UnitStart[g,t]  for g in m.ThermalGenerators   for t in m.TimePeriods)
-        on_cost    = sum( m.CommitmentCost[g] * m.UnitOn[g,t]  for g in m.ThermalGenerators   for t in m.TimePeriods)
-        power_cost = sum( 10  * m.PowerGenerated[g,t]          for g in m.ThermalGenerators   for t in m.TimePeriods)
-        shed_cost  = sum( 1000 * m.LoadShed[n,t]               for n in data["load_buses"]    for t in m.TimePeriods)
-        #stop_cost  = sum(   m.ShutDownCost[g] * m.UnitStop[g,t]   for g in m.ThermalGenerators for t in m.TimePeriods)
+        start_cost = sum( m.StartUpCost[g] * m.UnitStart[g,t]        for g in m.ThermalGenerators   for t in m.TimePeriods)
+        on_cost    = sum( m.CommitmentCost[g] * m.UnitOn[g,t]        for g in m.ThermalGenerators   for t in m.TimePeriods)
+        renew_cost = sum( 0.01 * m.RenPowerGenerated[g,t]            for g in m.RenewableGenerators for t in m.TimePeriods)
+        power_cost = sum( m.TimePrice[t]  * m.PowerGenerated[g,t]    for g in m.ThermalGenerators   for t in m.TimePeriods)
+        shed_cost  = sum( 1000 * m.LoadShed[n,t]                     for n in data["load_buses"]    for t in m.TimePeriods)
+        #bin_cost   = 0.0001 * sum(m.IsCharging[b,t] + m.IsDischarging[b,t] for b in m.StorageUnits        for t in m.TimePeriods)
 
+        #stop_cost  = sum(   m.ShutDownCost[g] * m.UnitStop[g,t]   for g in m.ThermalGenerators for t in m.TimePeriods)
         #c = sum(m.PowerCostVar[g,t] for g in m.ThermalGenerators for t in m.TimePeriods)
-        return   start_cost + on_cost +  power_cost + shed_cost
+        return   start_cost + on_cost +  power_cost + shed_cost + renew_cost 
         
     m.Objective = Objective(rule=ofv, sense=minimize)
 
@@ -311,7 +307,11 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt
                                          'UnitOn': {(g,t): value(m.UnitOn[g,t])         for g in m.ThermalGenerators for t in range(m.InitialTime, t_roll+1)},
                                       'UnitStart': {(g,t): value(m.UnitStart[g,t])      for g in m.ThermalGenerators for t in range(m.InitialTime, t_roll+1)},
                                        'UnitStop': {(g,t): value(m.UnitStop[g,t])       for g in m.ThermalGenerators for t in range(m.InitialTime, t_roll+1)},
-                                            'SoC': {(b,t): value(m.SoC[b, t])           for b in m.StorageUnits      for t in range(m.InitialTime, t_roll+1)}} ,
+                                     'IsCharging': {(b,t): value(m.IsCharging[b,t])     for b in m.StorageUnits      for t in range(m.InitialTime, t_roll+1)}, 
+                                    'ChargePower': {(b,t): value(m.ChargePower[b,t])    for b in m.StorageUnits      for t in range(m.InitialTime, t_roll+1)}, 
+                                 'DischargePower': {(b,t): value(m.ChargePower[b,t])    for b in m.StorageUnits      for t in range(m.InitialTime, t_roll+1)}, 
+                                            'SoC': {(b,t): value(m.SoC[b,t])            for b in m.StorageUnits      for t in range(m.InitialTime, t_roll+1)}, 
+                                  'IsDischarging': {(b,t): value(m.IsDischarging[b,t])  for b in m.StorageUnits      for t in range(m.InitialTime, t_roll+1)}} ,
 
                         'warm_start': {'PowerGenerated': {(g,t): value(m.PowerGenerated[g,t]) for g in m.ThermalGenerators  for t in range(t_roll+1, m.FinalTime+1)}, 
                                         # 'UnitOn': {(g,t): value(m.UnitOn[g,t])               for g in m.ThermalGenerators for t in range(t_roll+1, m.FinalTime+1)},

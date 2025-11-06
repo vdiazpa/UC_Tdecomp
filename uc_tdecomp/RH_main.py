@@ -7,9 +7,9 @@ import pandas as pd
 import numpy as np
 import csv
 
-# L = 4            # Lookahead
-# F = 12            # Roll forward period
-T = 336          # length of planning horizon
+L = 4            # Lookahead
+F = 8           # Roll forward period
+T = 72          # length of planning horizon
 prt_cry = False  # Print carryover constraints
 opt_gap = 0.05   # Optimality gap for monolithic solve
 
@@ -60,9 +60,9 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=Non
         T = max(data["periods"])
 
     windows, fixes = RH_windows_fixes(T, F, L)
-    fixed_sol   = {"UnitOn":{}, "UnitStart":{}, "UnitStop":{}}
+    fixed_sol   = {"UnitOn":{}, "UnitStart":{}, "UnitStop":{}, 'IsCharging':{}, 'IsDischarging':{}, 'SoC':{}, 'ChargePower':{}, 'DischargePower':{}}
+    warm_start  = None
     init_states = {}
-    warm_start = None
 
     if verbose:
         print(f"Running RH with F = {F}, L = {L}, T = {T}")
@@ -83,7 +83,7 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=Non
         for k in fixed_sol.keys():
             for (g,t), v in result["vars"][k].items():
                 if t_fix0 <= t <= t_fix1:
-                    fixed_sol[k][(g,t)] = float(v) if k == "PowerGenerated" else int(round(v))
+                    fixed_sol[k][(g,t)] = float(v) if k in ["PowerGenerated", "SoC", "ChargePower", "DischargePower"] else int(round(v))
 
     rh_time = perf_counter() - t0
     
@@ -96,6 +96,7 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=Non
     if write_csv:           # Collect all time periods and generators
         all_t = sorted({t for (g, t) in fixed_sol["UnitOn"].keys()})
         all_g = sorted({g for (g, t) in fixed_sol["UnitOn"].keys()})
+        all_b = sorted({b for (b, t) in fixed_sol['IsCharging'].keys()})
 
         with open(f"RHcommits_F{F}_L{L}_T{T}.csv", "w", newline="") as f:
             writer = csv.writer(f)
@@ -115,16 +116,41 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=Non
                 for t in all_t:
                     row.append(fixed_sol["UnitStop"].get((g, t), ""))
                 writer.writerow(row)
+            for b in all_b:
+                row = ["IsCharging", b]
+                for t in all_t:
+                    row.append(fixed_sol['IsCharging'].get((b, t), ""))
+                writer.writerow(row)
+            for b in all_b:
+                row = ["IsDischarging", b]
+                for t in all_t:
+                    row.append(fixed_sol['IsDischarging'].get((b, t), ""))
+                writer.writerow(row)
+            for b in all_b:
+                row = ["ChargePower", b]
+                for t in all_t:
+                    row.append(fixed_sol['ChargePower'].get((b, t), ""))
+                writer.writerow(row)
+            for b in all_b:
+                row = ["DischargePower", b]
+                for t in all_t:
+                    row.append(fixed_sol['DischargePower'].get((b, t), ""))
+                writer.writerow(row)
+            for b in all_b:
+                row = ["SoC", b]
+                for t in all_t:
+                    row.append(fixed_sol['SoC'].get((b, t), ""))
+                writer.writerow(row)
                 
     if benchmark:
         benchmark_UC_build(data, opt_gap)
 
     return rh_time, ofv, fixed_sol
 
-# commitment, ofv, _ = run_RH(data, F = F, L = L, T = T, write_csv = True, opt_gap = opt_gap, verbose = True, benchmark=True)
-# print("OFV with RH according to function is: ", ofv)
+commitment, ofv, _ = run_RH(data, F = F, L = L, T = T, write_csv = True, opt_gap = opt_gap, verbose = True, benchmark=False)
+print("OFV with RH according to function is: ", ofv)
 
-def sweep_RH(data, T =T, F_vals = [4,8,12,16,20,24], L_vals = [4,8,12,16,20,24], seeds=(41, 86), opt_gap = opt_gap, only_valid = False, csv_path = f"rh_duke_results_EXP_{T}.csv", verbose = False):
+def sweep_RH(data, T =T, F_vals = [4,8], L_vals = [4,8], seeds=(41, 86, 55), opt_gap = opt_gap, only_valid = False, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = False):
 
     records = []
     for F in F_vals:
@@ -175,11 +201,18 @@ def sweep_RH(data, T =T, F_vals = [4,8,12,16,20,24], L_vals = [4,8,12,16,20,24],
     print(f"Wrote {len(df)} rows to {csv_path}")
     return df
 
-df = sweep_RH( data, T = T, F_vals = [4,8,12,16,20,24], L_vals = [4,8,12,16,20,24], seeds=(41, 86), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR.csv", verbose = True)
+# df = sweep_RH( data, T = T, F_vals = [4,8], L_vals = [4,8], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
+# T = 168
+# data =  load_csv_data(T)
+# df2 = sweep_RH( data, T = T, F_vals = [4,8], L_vals = [4,8], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
+# T = 336
+# data =  load_csv_data(T)
+# df3 = sweep_RH( data, T = T, F_vals = [4,8], L_vals = [4,8], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
 
 ##############Plotting code##############
 
 # import pandas as pd
+
 # import matplotlib.pyplot as plt
 # from mpl_toolkits.mplot3d import Axes3D
 

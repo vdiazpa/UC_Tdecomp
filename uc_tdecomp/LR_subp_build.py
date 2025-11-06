@@ -28,6 +28,7 @@ def build_LR_subprobs(data, s_e, index_set):
     m.PowerGeneratedT0      = Param(m.ThermalGenerators, initialize = data['p_init'])   
     m.StatusAtT0            = Param(m.ThermalGenerators, initialize = data['init_status'] ) 
     m.UnitOnT0              = Param(m.ThermalGenerators, initialize = lambda m, g: 1.0 if m.StatusAtT0[g] > 0 else 0.0)
+    m.SoCAtT0               = Param(m.StorageUnits,      initialize = data['SoC_init']) 
     m.MaximumPowerOutput    = Param(m.ThermalGenerators, initialize = data['p_max'])
     m.MinimumPowerOutput    = Param(m.ThermalGenerators, initialize = data['p_min'])
     m.RenewableOutput       = Param(m.RenewableGenerators, data["periods"], initialize=data['ren_output'])
@@ -54,6 +55,7 @@ def build_LR_subprobs(data, s_e, index_set):
     # Variables    
     m.PowerGenerated      = Var(m.ThermalGenerators, m.TimePeriods, within = NonNegativeReals) 
     m.PowerCostVar        = Var(m.ThermalGenerators, m.TimePeriods, within = NonNegativeReals) 
+    m.RenPowerGenerated   = Var(m.RenewableGenerators, m.TimePeriods, within=NonNegativeReals) 
     m.UnitOn              = Var(m.ThermalGenerators, m.TimePeriods, within = Binary)
     m.UnitStart           = Var(m.ThermalGenerators, m.TimePeriods, within = Binary)
     m.UnitStop            = Var(m.ThermalGenerators, m.TimePeriods, within = Binary)
@@ -66,8 +68,8 @@ def build_LR_subprobs(data, s_e, index_set):
     m.DT_Obl_end          = Var(m.ThermalGenerators, m.Max_t,       within = NonNegativeReals)
     
     m.SoC                 = Var(m.StorageUnits,      m.TimePeriods, within = NonNegativeReals, bounds = lambda m, b, t: (0, m.Storage_EnergyCap[b]) )
-    m.ChargePower         = Var(m.StorageUnits,      m.TimePeriods, within = NonNegativeReals, bounds = lambda m, b, t: (0, m.Storage_RoC[b] * m.Storage_EnergyCap[b]) )
-    m.DischargePower      = Var(m.StorageUnits,      m.TimePeriods, within = NonNegativeReals, bounds = lambda m, b, t: (0, m.Storage_RoC[b] * m.Storage_EnergyCap[b]) )
+    m.ChargePower         = Var(m.StorageUnits,      m.TimePeriods, within = NonNegativeReals, bounds = lambda m, b, t: (0, m.Storage_RoC[b] ) )
+    m.DischargePower      = Var(m.StorageUnits,      m.TimePeriods, within = NonNegativeReals, bounds = lambda m, b, t: (0, m.Storage_RoC[b] ) )
     m.IsCharging          = Var(m.StorageUnits,      m.TimePeriods, within = Binary)
     m.IsDischarging       = Var(m.StorageUnits,      m.TimePeriods, within = Binary)
     
@@ -77,7 +79,7 @@ def build_LR_subprobs(data, s_e, index_set):
         m.LoadShed_copy       = Var(data["load_buses"],  m.Min_t, within = NonNegativeReals)
         m.V_Angle_copy        = Var(     data['buses'],  m.Min_t, within = Reals, bounds = (-180, 180) )
         m.UnitOn_copy         = Var(m.ThermalGenerators, m.Min_t, within = Binary)
-        m.Flow_copy           = Var(m.TransmissionLines, m.Min_t, within = Reals, bounds = lambda m, l, t: (-m.FlowCapacity[l], m.FlowCapacity[l]))
+        m.Flow_copy           = Var(m.TransmissionLines, m.Min_t, within = Reals,            bounds = lambda m, l, t: (-m.FlowCapacity[l], m.FlowCapacity[l]))
         m.UT_Obl_copy         = Var(m.ThermalGenerators, m.Min_t, within = NonNegativeReals, bounds = lambda m, g, t: (0, m.MinUpTime[g]) )
         m.DT_Obl_copy         = Var(m.ThermalGenerators, m.Min_t, within = NonNegativeReals, bounds = lambda m, g, t: (0, m.MinDownTime[g]) )
         m.SoC_copy            = Var(m.StorageUnits,      m.Min_t, within = NonNegativeReals, bounds = lambda m, b, t: (0, m.Storage_EnergyCap[b]) )
@@ -92,9 +94,9 @@ def build_LR_subprobs(data, s_e, index_set):
         def nb_copy_rule(m,b,t):
             thermal = sum(m.PowerGenerated_copy[g,t] for g in data["ther_gens_by_bus"][b]) if b in data["ther_gens_by_bus"] else 0.0
             flows   = sum(m.Flow_copy[l,t] * data['lTb'][(l,b)] for l in data['lines_by_bus'][b])
-            renew   = data['ren_bus_t'][(b,t)]
+            renew = 0.0 if b not in data['bus_ren_dict'] else sum(m.RenewableOutput[(g,t)] for g in data['bus_ren_dict'][b])
             shed    = m.LoadShed_copy[b,t] if b in data["load_buses"] else 0.0
-            return thermal + flows + renew + shed >= data["demand"].get((b,t), 0.0)
+            return thermal + flows + shed + renew >= data["demand"].get((b,t), 0.0)
         
         m.NodalBalance_copy = Constraint(data["buses"],       m.Min_t, rule = nb_copy_rule)
         m.Power_Flow_copy   = Constraint(m.TransmissionLines, m.Min_t, rule = lambda m, l, t: m.Flow_copy[l,t] * m.LineReactance[l] == m.V_Angle_copy[data["line_ep"][l][0],t] - m.V_Angle_copy[data["line_ep"][l][1],t], doc='Power_flow')
@@ -133,43 +135,41 @@ def build_LR_subprobs(data, s_e, index_set):
     # ====================================== Battery Energy Storage Constraints ====================================== #
     
     m.Storage_constraints = ConstraintList(doc = 'SoC_constraints')
+    
     for b in m.StorageUnits:
         for t in m.TimePeriods:
-            m.Storage_constraints.add( m.SoC[b,t] <= m.Storage_EnergyCap[b] )
             m.Storage_constraints.add( m.ChargePower[b,t] <= m.Storage_RoC[b] * m.IsCharging[b,t] )
             m.Storage_constraints.add( m.DischargePower[b,t] <= m.Storage_RoC[b] * m.IsDischarging[b,t] )
             m.Storage_constraints.add( m.IsCharging[b,t] + m.IsDischarging[b,t] <= 1 )
 
             if t not in m.InitialTime: 
-                m.Storage_constraints.add( m.SoC[b,t] == m.SoC[b,t-1] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t] )  # SoC balance
-                m.Storage_constraints.add( m.ChargePower[b,t]*m.Storage_Efficiency[b] + m.SoC[b,t-1] <= m.Storage_EnergyCap[b] )
+                m.Storage_constraints.add( m.SoC[b,t] == m.SoC[b,t-1] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t] / m.Storage_Efficiency[b] )  # SoC balance
                 
             else:
                 if t == 1: 
-                    m.Storage_constraints.add( m.SoC[b,t] == m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t] )
-                    m.Storage_constraints.add( m.ChargePower[b,t]*m.Storage_Efficiency[b] <= m.Storage_EnergyCap[b] )
+                    m.Storage_constraints.add( m.SoC[b,t] == m.SoCAtT0[b] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t] / m.Storage_Efficiency[b] )
                 else:
-                    m.Storage_constraints.add( m.SoC[b,t] == m.SoC_copy[b,t-1] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t] )
-                    m.Storage_constraints.add( m.ChargePower[b,t]*m.Storage_Efficiency[b] + m.SoC_copy[b,t-1] <= m.Storage_EnergyCap[b] )
+                    m.Storage_constraints.add( m.SoC[b,t] == m.SoC_copy[b,t-1] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t] / m.Storage_Efficiency[b] )  # SoC balance
 
     # ======================================= Single Period Constraints ======================================= #
     
     def nb_rule(m,b,t):
         thermal = sum(m.PowerGenerated[g,t] for g in data["ther_gens_by_bus"][b]) if b in data["ther_gens_by_bus"] else 0.0
         flows   = sum(m.Flow[l,t] * data['lTb'][(l,b)] for l in data['lines_by_bus'][b])
-        renew   = data['ren_bus_t'][(b,t)]
         shed    = m.LoadShed[b,t] if b in data["load_buses"] else 0.0
-        storage = 0.0 if b not in data['bus_bat'] else sum( m.DischargePower[bat,t] * m.Storage_Efficiency[bat] - m.ChargePower[bat,t] for bat in data['bus_bat'][b]) 
-        return thermal + flows + renew + shed  + storage >= data["demand"].get((b,t), 0.0)
+        storage = 0.0 if b not in data['bus_bat'] else sum(m.DischargePower[bat,t] - m.ChargePower[bat,t] for bat in data['bus_bat'][b])
+        renew   = 0.0 if b not in data['bus_ren_dict'] else sum(m.RenPowerGenerated[g,t] for g in data['bus_ren_dict'][b])
+        return thermal + flows +  shed  + renew + storage >= data["demand"].get((b,t), 0.0)
+    
     m.NodalBalance = Constraint(data["buses"], m.TimePeriods, rule = nb_rule)
 
     for t in m.TimePeriods:
         m.V_Angle[data["ref_bus"], t].fix(0.0)
 
-    # Intra subhorizon constraints
-    m.MaxCap_thermal = Constraint(m.ThermalGenerators, m.TimePeriods, rule=lambda m,g,t: m.PowerGenerated[g,t] <= m.MaximumPowerOutput[g]*m.UnitOn[g,t], doc= 'max_capacity_thermal')
-    m.MinCap_thermal = Constraint(m.ThermalGenerators, m.TimePeriods, rule=lambda m,g,t: m.PowerGenerated[g,t] >= m.MinimumPowerOutput[g]*m.UnitOn[g,t], doc= 'min_capacity_thermal')
-    m.Power_Flow   = Constraint(m.TransmissionLines, m.TimePeriods, rule=lambda m,l,t: m.Flow[l,t] * m.LineReactance[l] == m.V_Angle[data["line_ep"][l][0],t] - m.V_Angle[data["line_ep"][l][1],t], doc='Power_flow')
+    m.MaxCapacity_renew = Constraint(m.RenewableGenerators, m.TimePeriods, rule=lambda m,g,t: m.RenPowerGenerated[g,t] <= m.RenewableOutput[(g,t)], doc= 'renewable_output')
+    m.MaxCap_thermal    = Constraint(m.ThermalGenerators,   m.TimePeriods, rule=lambda m,g,t: m.PowerGenerated[g,t] <= m.MaximumPowerOutput[g]*m.UnitOn[g,t], doc= 'max_capacity_thermal')
+    m.MinCap_thermal    = Constraint(m.ThermalGenerators,   m.TimePeriods, rule=lambda m,g,t: m.PowerGenerated[g,t] >= m.MinimumPowerOutput[g]*m.UnitOn[g,t], doc= 'min_capacity_thermal')
+    m.Power_Flow        = Constraint(m.TransmissionLines,   m.TimePeriods, rule=lambda m,l,t: m.Flow[l,t] * m.LineReactance[l] == m.V_Angle[data["line_ep"][l][0],t] - m.V_Angle[data["line_ep"][l][1],t], doc='Power_flow')
 
     # ======================================= Logic and Ramping ======================================= #
     
@@ -194,12 +194,21 @@ def build_LR_subprobs(data, s_e, index_set):
                     m.logical_constraints.add(m.UnitStart[g,t] - m.UnitStop[g,t] == m.UnitOn[g,t] - m.UnitOn_copy[g,t-1])
                     m.RampUp_constraints.add(m.PowerGenerated[g,t] - m.PowerGenerated_copy[g,t-1] <= m.NominalRampUpLimit[g] * m.UnitOn_copy[g, t-1] + m.StartupRampLimit[g] * m.UnitStart[g,t])
                     m.RampDown_constraints.add(m.PowerGenerated_copy[g,t-1] - m.PowerGenerated[g,t] <= m.NominalRampDownLimit[g] * m.UnitOn[g, t] + m.ShutdownRampLimit[g] * m.UnitStop[g,t])
+    
+     # ======================================= Objective Function with penalties ======================================= #
 
+    if 1 not in s_e:
+        timeprice_index = tuple(sorted(set(s_e + [min(s_e)-1])))
+    else:
+        timeprice_index = tuple(sorted(s_e))
+
+    m.TimePrice = Param(timeprice_index, initialize=lambda m, t: 20.0 if (int(t) % 24) in (16,17,18,19,20) else 5.0)
+    
     def ofv_start(m):
         shed_cost  = 1000*sum(        m.LoadShed[n,t]                         for n in data["load_buses"]   for t in m.TimePeriods)
         start_cost = sum(            m.StartUpCost[g] * m.UnitStart[g,t]      for g in m.ThermalGenerators  for t in m.TimePeriods)
-        on_cost    = sum(     0.5*m.CommitmentCost[g] * m.UnitOn[g,t]         for g in m.ThermalGenerators  for t in m.Max_t) + sum(m.CommitmentCost[g] * m.UnitOn[g,t]  for g in m.ThermalGenerators   for t in inner_hrs)
-        pow_cost   = 5.00*sum(  m.PowerGenerated[g,t]                         for g in m.ThermalGenerators  for t in m.Max_t) + sum(  10.0  * m.PowerGenerated[g,t]  for g in m.ThermalGenerators   for t in inner_hrs)
+        on_cost    = sum(     0.5*m.CommitmentCost[g] * m.UnitOn[g,t]         for g in m.ThermalGenerators  for t in m.Max_t) + sum(m.CommitmentCost[g] * m.UnitOn[g,t]    for g in m.ThermalGenerators   for t in inner_hrs)
+        pow_cost   = sum(              m.TimePrice[t] * m.PowerGenerated[g,t] for g in m.ThermalGenerators  for t in m.Max_t) + sum( m.TimePrice[t]  * m.PowerGenerated[g,t]  for g in m.ThermalGenerators   for t in inner_hrs)
         pnlty_on   = sum(       m.L[(g, t, 'UnitOn')] * m.UnitOn[g,t]         for g in m.ThermalGenerators  for t in m.Max_t)   
         pnlty_UObl = sum(       m.L[(g, t, 'UT_Obl')] * m.UT_Obl_end[g,t]     for g in m.ThermalGenerators  for t in m.Max_t)
         pnlty_DObl = sum(       m.L[(g, t, 'DT_Obl')] * m.DT_Obl_end[g,t]     for g in m.ThermalGenerators  for t in m.Max_t)
@@ -211,10 +220,10 @@ def build_LR_subprobs(data, s_e, index_set):
     def ofv(m):
         shed_cost      = 1000*sum(        m.LoadShed[n,t]                              for n in data["load_buses"]   for t in m.TimePeriods)
         st_cost        =      sum(       m.StartUpCost[g] * m.UnitStart[g,t]           for g in m.ThermalGenerators  for t in m.TimePeriods)
-        on_cost        = 0.50*sum(    m.CommitmentCost[g] * m.UnitOn[g,t]              for g in m.ThermalGenerators  for t in m.Max_t) + sum( m.CommitmentCost[g] * m.UnitOn[g,t] for g in m.ThermalGenerators for t in inner_hrs )
-        pow_cost       = 0.50*sum(                   10.0 * m.PowerGenerated[g,t]      for g in m.ThermalGenerators  for t in m.Max_t) + sum( 10 * m.PowerGenerated[g,t] for g in m.ThermalGenerators for t in inner_hrs)
+        on_cost        = 0.50*sum(    m.CommitmentCost[g] * m.UnitOn[g,t]              for g in m.ThermalGenerators  for t in m.Max_t) + sum( m.CommitmentCost[g] * m.UnitOn[g,t]    for g in m.ThermalGenerators for t in inner_hrs )
+        pow_cost       = 0.50*sum(         m.TimePrice[t] * m.PowerGenerated[g,t]      for g in m.ThermalGenerators  for t in m.Max_t) + sum( m.TimePrice[t] * m.PowerGenerated[g,t] for g in m.ThermalGenerators for t in inner_hrs)
         on_cpy_cost    = 0.50*sum(    m.CommitmentCost[g] * m.UnitOn_copy[g,t]         for g in m.ThermalGenerators  for t in m.Min_t) 
-        pow_cpy_cost   = 0.50*sum(                   10.0 * m.PowerGenerated_copy[g,t] for g in m.ThermalGenerators  for t in m.Min_t) 
+        pow_cpy_cost   = 0.50*sum(         m.TimePrice[t] * m.PowerGenerated_copy[g,t] for g in m.ThermalGenerators  for t in m.Min_t) 
         pnlty_pow      = sum( m.L[(g,t,'PowerGenerated')] * m.PowerGenerated[g,t]      for g in m.ThermalGenerators  for t in m.Max_t) 
         pnlty_on       = sum(       m.L[(g, t, 'UnitOn')] * m.UnitOn[g,t]              for g in m.ThermalGenerators  for t in m.Max_t) 
         pnlty_UObl     = sum(       m.L[(g, t, 'UT_Obl')] * m.UT_Obl_end[g,t]          for g in m.ThermalGenerators  for t in m.Max_t)
@@ -233,8 +242,8 @@ def build_LR_subprobs(data, s_e, index_set):
     def ofv_end(m):
         st_cost        =      sum(      m.StartUpCost[g] * m.UnitStart[g,t]           for g in m.ThermalGenerators  for t in m.TimePeriods)
         shed_cost      = 1000*sum(      m.LoadShed[n, t]                              for n in data["load_buses"]   for t in m.TimePeriods)
-        on_cost        = 0.50*sum(   m.CommitmentCost[g] * m.UnitOn_copy[g,t]         for g in m.ThermalGenerators  for t in m.Min_t) + sum( m.CommitmentCost[g] * m.UnitOn[g,t] for g in m.ThermalGenerators   for t in m.TimePeriods)
-        pow_cost       = 0.50*sum(                  10.0 * m.PowerGenerated_copy[g,t] for g in m.ThermalGenerators  for t in m.Min_t) + sum( 10  * m.PowerGenerated[g,t]         for g in m.ThermalGenerators   for t in m.TimePeriods)
+        on_cost        = 0.50*sum(   m.CommitmentCost[g] * m.UnitOn_copy[g,t]         for g in m.ThermalGenerators  for t in m.Min_t) + sum( m.CommitmentCost[g] * m.UnitOn[g,t]       for g in m.ThermalGenerators   for t in m.TimePeriods)
+        pow_cost       = 0.50*sum(        m.TimePrice[t] * m.PowerGenerated_copy[g,t] for g in m.ThermalGenerators  for t in m.Min_t) + sum( m.TimePrice[t]  * m.PowerGenerated[g,t]   for g in m.ThermalGenerators   for t in m.TimePeriods)
         pnlty_on_cpy   = sum(      m.L[(g, t, 'UnitOn')] * m.UnitOn_copy[g,t]         for g in m.ThermalGenerators  for t in m.Min_t)
         pnlty_UObl_cpy = sum(      m.L[(g, t, 'UT_Obl')] * m.UT_Obl_copy[g,t]         for g in m.ThermalGenerators  for t in m.Min_t)
         pnlty_DObl_cpy = sum(      m.L[(g, t, 'DT_Obl')] * m.DT_Obl_copy[g,t]         for g in m.ThermalGenerators  for t in m.Min_t)

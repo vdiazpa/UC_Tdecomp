@@ -207,7 +207,7 @@ def load_csv_data(T):
     line_to_bus  = linetobus.iloc[:, 1:]
     line_to_bus.rename(index={i: lines_list[i] for i in range(len(lines_list))}, inplace=True)
     line_to_bus_dict = {(lid, b): line_to_bus.loc[lid, b] for lid in lines_list for b in all_nodes if line_to_bus.loc[lid, b] != 0}
-
+    
     lines_by_bus = { b: tuple(l for l in lines_list if (l, b) in line_to_bus_dict) for b in all_nodes }
 
     #gen -> bus mapping from gen_mat
@@ -249,8 +249,9 @@ def load_csv_data(T):
         if len(gbb_t) !=0:
             ther_gens_by_bus[bus] = tuple(gbb_t)
 
-    ren_bus_t  = {(b,t): sum(ren_output[(g,t)] for g in ren_gens if gen_bus.get(g) == b) for b in all_nodes for t in periods}
-
+    ren_bus_t    = {(b,t): sum(ren_output[(g,t)] for g in ren_gens if gen_bus.get(g) == b) for b in all_nodes for t in periods}
+    bus_ren_dict = { b: [g for g in ren_gens if bus_to_unit.loc[g, b] != 0] for b in all_nodes if any(bus_to_unit.loc[g, b] != 0 for g in ren_gens)}
+    
     gen_th = gen_data[gen_data["name"].isin(ther_gens)].set_index("name") # filter gen data df for thermal gens
     p_max  = gen_th["maxcap"].to_dict()
     p_min  = gen_th["mincap"].to_dict()
@@ -300,7 +301,7 @@ def load_csv_data(T):
     sto_RoC  = sto_params["bat_RoC"].to_dict()
     sto_Ecap = sto_params["bat_cap"].to_dict()
     sto_eff  = sto_params["bat_eff"].to_dict()
-    SoC_init = {b: 0.0 for b in bats}  #assumes storage initial SoC is 0
+    SoC_init = {b: sto_Ecap[b]*0.5 for b in bats}  #assumes storage initial SoC is 0
     
     bat_bus = sto_params["node_bat"].apply(lambda x: f"n_{str(x)}").to_dict()
     
@@ -319,6 +320,7 @@ def load_csv_data(T):
         "gens": gens,
         "bats": bats,
         "SoC_init": SoC_init,
+        "bus_ren_dict": bus_ren_dict,
         "bus_bat": bus_bat,
         "bat_bus": bat_bus,
         "sto_RoC": sto_RoC,

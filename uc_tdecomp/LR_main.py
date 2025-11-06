@@ -186,6 +186,7 @@ def _apply_start(m, start):
 if __name__ == "__main__":
 
     #======================================================================= Load Data =====
+
     T = 72
     #file_path  = "examples/unit_commitment/RTS_GMLC_zonal_noreserves.json"
     #data        = load_uc_data(file_path)
@@ -196,7 +197,7 @@ if __name__ == "__main__":
     
     #============================================================= Set Time Windows ===
     
-    subn         = 24                             # number of periods in subproblem
+    subn         = 12                             # number of periods in subproblem
     num_sh       = math.ceil(num_periods/subn)     # number of subproblems
     Time_windows = [list(range(i, min(i+subn, num_periods+1))) for i in range(1, num_periods+1, subn)]
     
@@ -227,16 +228,15 @@ if __name__ == "__main__":
         else:
             l[key] = UT_pnlty
 
+    l0 = dict(l)  # initial lambda values
+        
     #==========================================================# Initialize Pool Process #=======
-
     t_all_start = perf_counter()
     pool = Pool(processes=len(Time_windows), initializer = init_globals, initargs = (data, Time_windows, index_set))
-    
     tasks0   = [(i, l, 0) for i in range(len(Time_windows))]
     results0 = pool.map(solver_function, tasks0)            # solves and stores
     Lag0, g0 = get_lagrange_and_g(results0, Time_windows)
     
-    #q0 = Lag0 + 0.1* (abs(Lag0) + 1.0)
     if T == 168: 
         #q0 = 2471099193.65292 #w/o storage
         q0 =  2777992669.3 #w/ storage
@@ -247,165 +247,229 @@ if __name__ == "__main__":
     t_after_init = perf_counter()
     print(f"\nInitial build and solve time: {t_after_init - t_all_start:.3f} secs", "\nqbar is: ", f"{q0:.2f}", '\n', "Dual Value is", f"{Lag0:.2f}")
 
-    #==========================================================# Initialize Main Loop #==========
-    # gamma      = 1/num_sh   
+    #==========================================================# Initialize Main Loop #==========    
     max_iters    = 30
-    gamma        = 0.3
-    gamma_hat    = 1
+    LAMBDA_CONFIGS = [(0.2, 1.0), (0.4, 1.0), (0.6, 1.0)]
 
-    y_LB, y_UB   = -np.inf, np.inf
-    lam_len      = range(len(g0))         # Initialize PSVD model
-    PSVD         = ConcreteModel() 
-    PSVD.y       = Var(index_set, within = Reals, bounds = (y_LB, y_UB))
-    PSVD.Inf_det = ConstraintList(doc = 'inf_detect')
-    opt          = SolverFactory('gurobi')
+    runs = []
+    for (gamma, gamma_hat) in LAMBDA_CONFIGS:
+        
+        run_start = perf_counter()
+        print(f"\n\nStarting new LR run with gamma={gamma}, gamma_hat={gamma_hat}\n")
 
-    L_best = Lag0
-    Lag = Lag0
-    q   = q0
-    g   = g0
+        y_LB, y_UB   = -np.inf, np.inf               # Initialize PSVD model
+        PSVD         = ConcreteModel() 
+        PSVD.y       = Var(index_set, within = Reals, bounds = (y_LB, y_UB))
+        PSVD.Inf_det = ConstraintList(doc = 'inf_detect')
+        opt          = SolverFactory('gurobi')
+  
+        l = dict(l0)                                 
+        L_best = Lag0
+        Lag = Lag0
+        q   = q0
+        g   = g0
+        UB  = q0 
     
-    g_length, g_history, iter_times = [], [], []    
-    Best_lag   = [Lag0]
-    Lag_set    = [Lag0]
-    Level_vals = [q0]
-    g_set      = [g0]
-    k_j        = [0]              
-    UB = q0      
-    gap_pct = 100.0 * (UB - L_best) / abs(UB)
-
-    eta, j, k  = 0, 0, 0
+        g_length, g_history, iter_times = [], [], []    
+        gap_pct = 100.0 * (UB - L_best) / abs(UB)
+        eta, j, k  = 0, 0, 0
+        Best_lag   = [Lag0]
+        Lag_set    = [Lag0]
+        Level_vals = [q0]
+        g_set      = [g0]
+        k_j        = [0]              
     
     #=====================================================================  Main Loop ======
-    while k < max_iters:
-        t0 = perf_counter()
-        if k > 0:
-            tasks   = [(i, l, k) for i in range(len(Time_windows))]
-            results = pool.map(solver_function, tasks)                 # solves and stores
-            Lag, g  = get_lagrange_and_g(results, Time_windows)
-            L_best  = max(L_best, Lag)
-            gap_pct = 100.0 * (UB - L_best) / abs(UB)
-            Best_lag.append(L_best)
-            Lag_set.append(Lag); g_set.append(g)
-        else:
-            Lag, g = Lag0, g0
+        while k < max_iters:
+            t0 = perf_counter()
+            if k > 0:
+                tasks   = [(i, l, k) for i in range(len(Time_windows))]
+                results = pool.map(solver_function, tasks)                 # solves and stores
+                Lag, g  = get_lagrange_and_g(results, Time_windows)
+                L_best  = max(L_best, Lag)
+                gap_pct = 100.0 * (UB - L_best) / abs(UB)
+                Best_lag.append(L_best)
+                Lag_set.append(Lag); g_set.append(g)
+            else:
+                Lag, g = Lag0, g0
 
-        g_norm = np.linalg.norm(np.array(list(g.values())), ord = 2)
-        diff   = q - Lag
-        s_k    = gamma * (diff / (g_norm**2 + 1e-10)) #stepsize
+            g_norm = np.linalg.norm(np.array(list(g.values())), ord = 2)
+            diff   = q - Lag
+            s_k    = gamma * (diff / (g_norm**2 + 1e-10)) #stepsize
+            g_history.append(g)
+            g_length.append(g_norm)
+            print("\ng length is:", f"{g_norm:.4f}", "\nStepsize is:", f"{s_k:.2f}")# , "\nG is:", g)
 
-        g_history.append(g)
-        g_length.append(g_norm)
-        print("\ng length is:", f"{g_norm:.4f}", "\nStepsize is:", f"{s_k:.2f}")# , "\nG is:", g)
+            PSVD.Inf_det.add( sum( g[r] * PSVD.y[r] for r in index_set ) >= sum( g[r] * l[r] for r in index_set ) + (1/gamma_hat) * s_k * g_norm**2 )
+            PSVD_results = opt.solve(PSVD, tee=False)
 
-        PSVD.Inf_det.add( sum( g[r] * PSVD.y[r] for r in index_set ) >= sum( g[r] * l[r] for r in index_set ) + (1/gamma_hat) * s_k * g_norm**2 )
-        #PSVD.inf_detect_cut.pprint()
-
-        PSVD_results = opt.solve(PSVD, tee=False)
-
-        g_scld = { r : g[r] * s_k        for r in g }
-        l      = { r : l[r] + g_scld[r]  for r in g } 
-        #l      = { r : max(l[r], 0)      for r in g } 
+            g_scld = { r : g[r] * s_k        for r in g }
+            l      = { r : l[r] + g_scld[r]  for r in g } 
         
-        if k == max_iters -1:
-            with open("l_final.csv", "w", newline="") as f:
-                w = csv.writer(f)
-                w.writerow(["g", "t", "var", "multiplier"])
-                for (g,t,var), val in sorted(l.items()):
-                    w.writerow([g, t, var, val])
-            print('Saved final multipliers to l_final.csv')
+            if k == max_iters - 1:
+                with open("l_final.csv", "w", newline="") as f:
+                    w = csv.writer(f)
+                    w.writerow(["g", "t", "var", "multiplier"])
+                    for (g,t,var), val in sorted(l.items()):
+                        w.writerow([g, t, var, val])
+                print('Saved final multipliers to l_final.csv')
             
-        #print("Lagrange multiplier values:", l)
-        print("PSVD results:", PSVD_results.solver.termination_condition )
+            print("PSVD results:", PSVD_results.solver.termination_condition )
+            
+            if PSVD_results.solver.termination_condition != TerminationCondition.optimal:
+                print("Infeasible PSVD solution detected. Adjusting step size.")
+                q   = (gamma/gamma_hat) * q + (1 - gamma/gamma_hat) * max(Lag_set[ k_j[-1] : k_j[-1]+eta+1 ])
+                print("New q value is:", f"{q:.2f}")
+                PSVD.Inf_det.clear()  # clear the constraint list 
+                Level_vals.append(q)
+                k_j.append(k)
+                eta = 0
+                j+=1
+
+            else:
+                eta += 1
+                Level_vals.append(q)
+
+            t1 = perf_counter()
+            iter_times.append(t1 - t0)
+            print(f"Iter {k} took {t1 - t0:.2f}s;  current dual={Lag:.2f}, level={q:.2f}, gap={gap_pct:.2f}%")
+            k+=1
+            
+        t_end = perf_counter()
+        LR_runtime = t_end - run_start
+        lbest = np.maximum.accumulate(np.array(Lag_set))
+        print(f"Total LR time = {LR_runtime:.2f}s, "f"avg iter time = {np.mean(iter_times):.2f}s")
+        print("Best Lagrangian values over iterations:", lbest)
+
+        # one extra evaluation to show the dual with the final multipliers
+        results_final = pool.map(solver_function, [(i, l, max_iters) for i in range(len(Time_windows))])
+        Lag_final, _ = get_lagrange_and_g(results_final, Time_windows)
+
+        Lag_set.append(Lag_final)   # now you have the post-update dual
+        Level_vals.append(q)        # keep lengths aligned for plotting
         
-        if PSVD_results.solver.termination_condition != TerminationCondition.optimal:
-            print("Infeasible PSVD solution detected. Adjusting step size.")
-            q   = (gamma/gamma_hat) * q + (1 - gamma/gamma_hat) * max(Lag_set[ k_j[-1] : k_j[-1]+eta+1 ])
-            print("New q value is:", f"{q:.2f}")
-            PSVD.Inf_det.clear()  # clear the constraint list 
-            Level_vals.append(q)
-            k_j.append(k)
-            eta = 0
-            j+=1
+        runs.append({ 'gamma': gamma, 'gamma_hat': gamma_hat, 'Lag_set': Lag_set, 'Level_vals': Level_vals, 'Runtime': LR_runtime, 'g_norm': g_length })
 
-        else:
-            eta += 1
-            Level_vals.append(q)
+    print("\n############### Summary of runs #################")
+    for r in runs:
+        print(f"gamma={r['gamma']}, gamma_hat={r['gamma_hat']}, "
+            f"iters={len(r['Lag_set'])-1}, runtime={r['Runtime']:.2f}s, "
+            f"best_dual={max(r['Lag_set']):.2f}")
 
-        t1 = perf_counter()
-        iter_times.append(t1 - t0)
-        print(f"Iter {k} took {t1 - t0:.2f}s;  current dual={Lag:.2f}, level={q:.2f}, gap={gap_pct:.2f}%")
-        k+=1
-        #print(k)
-    t_end = perf_counter()
-    print(f"Total LR time = {t_end - t_all_start:.2f}s, "f"avg iter time = {np.mean(iter_times):.2f}s")
-
-# one extra evaluation to show the dual with the final multipliers
-    results_final = pool.map(solver_function, [(i, l, max_iters) for i in range(len(Time_windows))])
-    Lag_final, _ = get_lagrange_and_g(results_final, Time_windows)
-
-    Lag_set.append(Lag_final)   # now you have the post-update dual
-    Level_vals.append(q)        # keep lengths aligned for plotting
-
-    print("\n############### Summary of results #################")
-    print("Level values", Level_vals)
-    print("Lagrangian values", Lag_set)
-    #print("lambda values: ", l)
     pool.close()
     pool.join()
     
-    #Plot Results
     import numpy as np
     import matplotlib.pyplot as plt
 
-    dual  = np.array(Lag_set)
-    lbest = np.maximum.accumulate(dual)
-    iters = np.arange(len(dual))
+    colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
     plt.figure()
-    plt.plot(iters, lbest, label='Best Lagrangian (running max)', color='C1', linestyle='--')
-    plt.plot(iters, dual,  label='Dual at iteration k', color='C0', linestyle='-')
 
-    level = np.array(Level_vals[:len(dual)])
-    plt.plot(iters, level, label='Level Value', color='C2')
+    for i, r in enumerate(runs):
+        dual  = np.array(r['Lag_set'])
+        lbest = np.maximum.accumulate(dual)
+        iters = np.arange(len(dual))
+        c = colors[i % len(colors)]
 
-    plt.xlabel('Iteration'); plt.ylabel('Value')
-    plt.title('Dual and Best Lagrangian Lower Bound Over Iterations')
-    plt.legend(); plt.tight_layout()
-    plt.savefig('dual_vs_lbest_gamma={gamma}_hat={gamma_hat}_bounds=({y_LB},{y_UB})_T={T}.svg')                 # or: plt.savefig('dual_vs_lbest.svg', format='svg')
-    plt.show()
+        plt.plot(iters, dual, color=c, alpha=0.20, linewidth=1.2, label="_nolegend_")
 
+        # visible running max with legend
+        plt.plot(iters, lbest, color=c, linewidth=2.4,label=f"γ={r['gamma']}, ĥγ={r['gamma_hat']}")
 
-    dual  = np.array(Lag_set)
-    level = np.array(Level_vals)
-    n     = min(len(dual), len(level))
-    dual  = dual[:n]
-    level = level[:n]
-    iters = np.arange(n)
-    plt.figure()
-    plt.plot(iters, dual, label='Dual (Lagrange) Values')
-    plt.plot(iters, level, label='Level Values')
     plt.xlabel('Iteration')
-    plt.ylabel('Values')
-    plt.title(f'Dual and Level Values Over Iterations')
-    plt.legend()
+    plt.ylabel('Value')
+    plt.title(f'Dual convergence across Polyak settings (T={T}, window={subn})')
+    plt.legend(ncol=1,fontsize=9, loc='lower right',   frameon=True,fancybox=True,framealpha=0.9,borderpad=0.6,handlelength=2.0 )
     plt.tight_layout()
-    plt.savefig(f'dual_and_level_values_y={abs(y_UB)}.png')
+    plt.savefig(f'lr_convergence_overlay_T{T}_W{subn}.svg', bbox_inches='tight')
+    plt.show()
+    plt.figure()
+    
+
+    for i, r in enumerate(runs):
+        norms = np.asarray(r['g_norm'])
+        iters = np.arange(1, len(norms)+1)
+        c = colors[i % len(colors)]
+        plt.plot(iters, norms, color=c, linewidth=2.0,
+                label=f"γ={r['gamma']}, ĥγ={r['gamma_hat']}")
+
+    plt.xlabel('Iteration')
+    plt.ylabel(r'$\|g\|_2$')
+    plt.title(r'Subgradient norm over iterations: $\|g\|_2$')
+
+    # Legend INSIDE bottom-right; same style as first figure
+    plt.legend(
+        ncol=1,
+        fontsize=9,
+        loc='lower right',
+        frameon=True,
+        fancybox=True,
+        framealpha=0.9,
+        borderpad=0.6,
+        handlelength=2.0
+    )
+
+    plt.tight_layout()
+    plt.savefig(f'lr_norms_overlay_T{T}_W{subn}.svg', bbox_inches='tight')
     plt.show()
 
-    g_l  = np.array(g_length)
-    n     = len(g_length)
-    levg_lel = level[:n]
-    iters = np.arange(n)
-    plt.figure()
-    plt.plot(iters, g_l, label='Length of g')
-    plt.xlabel('Iteration')
-    plt.ylabel('Values')
-    plt.title(f'Norm of g')
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig('g_length.png')
-    plt.show()
+    
+    
+    
+    
+    # #Plot Results
+    # import numpy as np
+    # import matplotlib.pyplot as plt
+
+    # dual  = np.array(Lag_set)
+    # lbest = np.maximum.accumulate(dual)
+    # iters = np.arange(len(dual))
+
+    # plt.figure()
+    # plt.plot(iters, lbest, label='Best Lagrangian (running max)', color='C1', linestyle='--')
+    # plt.plot(iters, dual,  label='Dual at iteration k', color='C0', linestyle='-')
+
+    # level = np.array(Level_vals[:len(dual)])
+    # plt.plot(iters, level, label='Level Value', color='C2')
+
+    # plt.xlabel('Iteration'); plt.ylabel('Value')
+    # plt.title('Dual and Best Lagrangian Lower Bound Over Iterations')
+    # plt.legend(); plt.tight_layout()
+    # plt.savefig('dual_vs_lbest_gamma={gamma}_hat={gamma_hat}_bounds=({y_LB},{y_UB})_T={T}.svg')                 # or: plt.savefig('dual_vs_lbest.svg', format='svg')
+    # plt.show()
+
+
+    # dual  = np.array(Lag_set)
+    # level = np.array(Level_vals)
+    # n     = min(len(dual), len(level))
+    # dual  = dual[:n]
+    # level = level[:n]
+    # iters = np.arange(n)
+    # plt.figure()
+    # plt.plot(iters, dual, label='Dual (Lagrange) Values')
+    # plt.plot(iters, level, label='Level Values')
+    # plt.xlabel('Iteration')
+    # plt.ylabel('Values')
+    # plt.title(f'Dual and Level Values Over Iterations')
+    # plt.legend()
+    # plt.tight_layout()
+    # plt.savefig(f'dual_and_level_values_y={abs(y_UB)}.png')
+    # plt.show()
+
+    # g_l  = np.array(g_length)
+    # n     = len(g_length)
+    # levg_lel = level[:n]
+    # iters = np.arange(n)
+    # plt.figure()
+    # plt.plot(iters, g_l, label='Length of g')
+    # plt.xlabel('Iteration')
+    # plt.ylabel('Values')
+    # plt.title(f'Norm of g')
+    # plt.legend()
+    # plt.tight_layout()
+    # plt.savefig('g_length.png')
+    # plt.show()
 
     # for key in g_history[0].keys():
     #     if 'UnitOn' in key:
