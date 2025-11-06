@@ -8,8 +8,8 @@ import numpy as np
 import csv
 
 L = 4            # Lookahead
-F = 8           # Roll forward period
-T = 72          # length of planning horizon
+F = 8            # Roll forward period
+T = 72           # length of planning horizon
 prt_cry = False  # Print carryover constraints
 opt_gap = 0.05   # Optimality gap for monolithic solve
 
@@ -55,7 +55,7 @@ def RH_windows_fixes(T, F, L):
 
 
 def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=None):
-
+    # Will run the rolling horizon algorithm given T, L, and F. 
     if T is None: 
         T = max(data["periods"])
 
