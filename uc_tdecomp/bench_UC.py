@@ -7,7 +7,8 @@ from time import perf_counter
 file_path  = "./RTS_GMLC_zonal_noreserves.json"
 #file_path = "examples/unit_commitment/tiny_rts_ready.json"
 
-data =  load_csv_data(72)
+T = 12
+data =  load_csv_data(T)
 #data      = load_uc_data(file_path)
 
 
@@ -20,7 +21,7 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_s
     opt.warm_start_capable()
 
     # Sets
-    m.TimePeriods         = data['periods']
+    m.TimePeriods         = data['periods'] 
     m.LoadBuses           = Set(initialize=data['load_buses'], ordered=True)
     m.InitialTime         = min(m.TimePeriods)
     m.FinalTime           = max(m.TimePeriods)
@@ -166,7 +167,7 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_s
     for b in m.StorageUnits:
         for t in m.TimePeriods:
             if t % 24 == 0:
-                m.SOC_constraints.add(m.SoC[b,t] >= m.SoCAtT0[b])   # example
+                m.SOC_constraints.add(m.SoC[b,t] >= m.SoCAtT0[b])  
 
             if t == m.InitialTime:
                 m.SOC_constraints.add(
@@ -175,7 +176,7 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_s
                 m.SOC_constraints.add(
                     m.SoC[b,t] == m.SoC[b,t-1] + m.Storage_Efficiency[b] * m.ChargePower[b,t]- (m.DischargePower[b,t] / m.Storage_Efficiency[b]))
 
-            m.SOC_constraints.add(m.ChargePower[b,t]    <= m.Storage_RoC[b] * m.IsCharging[b,t])
+            m.SOC_constraints.add( m.ChargePower[b,t]   <= m.Storage_RoC[b] * m.IsCharging[b,t])
             m.SOC_constraints.add(m.DischargePower[b,t] <= m.Storage_RoC[b] * m.IsDischarging[b,t])
 
             m.SOC_constraints.add(m.IsCharging[b,t] + m.IsDischarging[b,t] <= 1)
@@ -265,7 +266,7 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_s
         all_g = sorted({g for g in m.ThermalGenerators})
         all_b = sorted({b for b in m.StorageUnits})
 
-        with open("Sol_bench{T}.csv", "w", newline="") as f:
+        with open(f"Sol_bench{T}.csv", "w", newline="") as f:
             writer = csv.writer(f)
 
             writer.writerow(["Variable", "Entity"] + all_t)
@@ -318,4 +319,4 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_s
     return return_object
 
         
-x = benchmark_UC_build(data, opt_gap=0.05, tee = True, save_sol = True)
+#x = benchmark_UC_build(data, opt_gap=0.05, tee = True, save_sol = True)

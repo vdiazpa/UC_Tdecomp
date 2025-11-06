@@ -87,8 +87,8 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt
         storage = 0.0 if b not in data['bus_bat'] else sum(m.DischargePower[bat,t] - m.ChargePower[bat,t] for bat in data['bus_bat'][b])
         return thermal + flows + renew + shed + storage == data["demand"].get((b,t), 0.0)
     
-    m.NodalBalance = Constraint(data["buses"], range(m.InitialTime, t_fix1+1), rule = nb_rule)
-
+    m.NodalBalance = Constraint(data["buses"], m.TimePeriods , rule = nb_rule) #range(m.InitialTime, t_fix1+1)
+    
     for t in m.TimePeriods:
         m.V_Angle[data["ref_bus"], t].fix(0.0)
 
@@ -108,6 +108,9 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt
                         m.Storage_constraints.add( m.SoC[b,t] == m.SoCAtT0[b] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t]/m.Storage_Efficiency[b] )
                     else:
                         m.Storage_constraints.add( m.SoC[b,t] == m.SoC[b,t-1] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t]/m.Storage_Efficiency[b] )  # SoC balance
+                        
+                    if t == t_fix1:
+                        m.Storage_constraints.add(m.SoC[b,t_fix1] >= m.SoCAtT0[b])
                 else:
                     #print("Relaxing SoC var for ", b, " at t = ", t, "will also relax some constraints")
                     m.SoC[b,t].domain = NonNegativeReals
@@ -125,9 +128,12 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt
                 if t == m.InitialTime:
                     m.Storage_constraints.add( m.SoC[b,t] == m.SoCAtT0[b] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t]/m.Storage_Efficiency[b] )
                 else:
-                    m.Storage_constraints.add( m.SoC[b,t] == m.SoC[b,t-1] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t]/m.Storage_Efficiency[b] )  # SoC balance                   
+                    m.Storage_constraints.add( m.SoC[b,t] == m.SoC[b,t-1] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t]/m.Storage_Efficiency[b] )  # SoC balance        
+                    
+                if t == t_fix1: 
+                    m.Storage_constraints.add(m.SoC[b,t_fix1] >= m.SoCAtT0[b])           
                    
-    # ======================================= Ramping & Logical Constraints ======================================= #
+    # # ======================================= Ramping & Logical Constraints ======================================= #
     
     m.RampDown_constraints = ConstraintList(doc = 'ramp_down')
     m.logical_constraints  = ConstraintList(doc = 'logical')
@@ -309,7 +315,7 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt
                                        'UnitStop': {(g,t): value(m.UnitStop[g,t])       for g in m.ThermalGenerators for t in range(m.InitialTime, t_roll+1)},
                                      'IsCharging': {(b,t): value(m.IsCharging[b,t])     for b in m.StorageUnits      for t in range(m.InitialTime, t_roll+1)}, 
                                     'ChargePower': {(b,t): value(m.ChargePower[b,t])    for b in m.StorageUnits      for t in range(m.InitialTime, t_roll+1)}, 
-                                 'DischargePower': {(b,t): value(m.ChargePower[b,t])    for b in m.StorageUnits      for t in range(m.InitialTime, t_roll+1)}, 
+                                 'DischargePower': {(b,t): value(m.DischargePower[b,t])    for b in m.StorageUnits      for t in range(m.InitialTime, t_roll+1)}, 
                                             'SoC': {(b,t): value(m.SoC[b,t])            for b in m.StorageUnits      for t in range(m.InitialTime, t_roll+1)}, 
                                   'IsDischarging': {(b,t): value(m.IsDischarging[b,t])  for b in m.StorageUnits      for t in range(m.InitialTime, t_roll+1)}} ,
 
