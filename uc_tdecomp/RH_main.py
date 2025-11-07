@@ -7,9 +7,9 @@ import pandas as pd
 import numpy as np
 import csv
 
-L = 2           # Lookahead
-F = 2            # Roll forward period
-T = 6           # length of planning horizon
+L = 12            # Lookahead
+F = 8            # Roll forward period
+T = 72            # length of planning horizon
 prt_cry = False  # Print carryover constraints
 opt_gap = 0.05   # Optimality gap for monolithic solve
 
@@ -157,11 +157,10 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=Non
 commitment, ofv, sol_to_plot = run_RH(data, F = F, L = L, T = T, write_csv = True, opt_gap = opt_gap, verbose = True, benchmark=False)
 
 import pandas as pd
-s = pd.Series(sol_to_plot['SoC'])                          # index is tuples (b,t)
+s = pd.Series(sol_to_plot['SoC'])                               # index is tuples (b,t)
 s.index = pd.MultiIndex.from_tuples(s.index, names=['b','t'])
 df_soc = s.reorder_levels(['t','b']).sort_index().unstack('b')  # index=t, columns=b
 
-# 3) quick plot — one color per battery
 import matplotlib.pyplot as plt
 ax = df_soc.plot(figsize=(10,6), linewidth=1.8, legend = False)
 ax.set_xlabel("Time (t)")

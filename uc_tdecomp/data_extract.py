@@ -8,7 +8,7 @@ def load_uc_data(json_path: str):
     md = _read_from_file(json_path, file_type="json")
     system     = md.get("system", {})
     elements   = md.get("elements", {})
-    periods    = list(system["time_keys"])             # e.g., [1,2,...,T] or actual labels
+    periods    = list(system["time_keys"])           
     periods    = [int(x) for x in periods]
     gens       = tuple(sorted(elements["generator"].keys()))
     T          = len(periods)
@@ -301,7 +301,7 @@ def load_csv_data(T):
     sto_RoC  = sto_params["bat_RoC"].to_dict()
     sto_Ecap = sto_params["bat_cap"].to_dict()
     sto_eff  = sto_params["bat_eff"].to_dict()
-    SoC_init = {b: sto_Ecap[b]*0.5 for b in bats}  #assumes storage initial SoC is 0
+    SoC_init = {b: sto_Ecap[b]*0.5 for b in bats}  
     
     bat_bus = sto_params["node_bat"].apply(lambda x: f"n_{str(x)}").to_dict()
     
