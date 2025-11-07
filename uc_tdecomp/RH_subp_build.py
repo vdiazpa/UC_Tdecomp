@@ -58,7 +58,7 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt
     m.Storage_Efficiency    = Param(m.StorageUnits, initialize = data['sto_eff'])
     #m.ShutDownCost           = Param(m.ThermalGenerators,   initialize=data['shutdown_cost'])
 
-     # ======================== Variables 
+    # ======================== Variables 
      
     m.PowerGenerated      = Var(m.ThermalGenerators,  m.TimePeriods, within = NonNegativeReals )#bounds = lambda m, g, t: (0, m.MaximumPowerOutput[g]))
     m.RenPowerGenerated   = Var(m.RenewableGenerators, m.TimePeriods, within=NonNegativeReals) 
@@ -90,7 +90,7 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt
         storage = 0.0 if b not in data['bus_bat'] else sum(m.DischargePower[bat,t] - m.ChargePower[bat,t] for bat in data['bus_bat'][b])
         return thermal + flows + renew + shed + storage == data["demand"].get((b,t), 0.0)
     
-    m.NodalBalance = Constraint(data["buses"], m.TimePeriods , rule = nb_rule) #range(m.InitialTime, t_fix1+1)
+    m.NodalBalance = Constraint(data["buses"], range(m.InitialTime, t_fix1+1) , rule = nb_rule) #
     
     for t in m.TimePeriods:
         m.V_Angle[data["ref_bus"], t].fix(0.0)
@@ -191,8 +191,7 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt
                 m.Storage_constraints.add(m.IsCharging[b, t] + m.IsDischarging[b, t] <= 1)
                 m.Storage_constraints.add(m.ChargePower[b, t]  <= m.Storage_RoC[b] * m.IsCharging[b, t])
                 m.Storage_constraints.add(m.DischargePower[b, t] <= m.Storage_RoC[b] * m.IsDischarging[b, t])
-
-
+    
     for b in m.StorageUnits:
         
         gain_next = next_fixed_len * m.Storage_Efficiency[b] * m.Storage_RoC[b]
