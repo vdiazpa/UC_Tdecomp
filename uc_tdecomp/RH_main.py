@@ -7,9 +7,9 @@ import pandas as pd
 import numpy as np
 import csv
 
-L = 4            # Lookahead
-F = 8            # Roll forward period
-T = 72           # length of planning horizon
+L = 2           # Lookahead
+F = 2            # Roll forward period
+T = 6           # length of planning horizon
 prt_cry = False  # Print carryover constraints
 opt_gap = 0.05   # Optimality gap for monolithic solve
 
@@ -71,11 +71,18 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=Non
 
     for i, (window, fix_periods) in enumerate(zip(windows, fixes)):
         t_fix0, t_fix1 = fix_periods
+        
+        if i+1 < len(fixes):
+            nf0, nf1 = fixes[i+1]
+            next_fixed_len = nf1 - nf0 + 1
+        else:
+            next_fixed_len = 0
+        
         if verbose:
             print(f"Window {i+1}/{len(windows)}: {window} | fix {fix_periods}")
 
         result = build_RH_subprobs(data, window, init_states if i>0 else {}, fix_periods, print_carryover = prt_cry, 
-                                     opt_gap = opt_gap, warm_start = warm_start, solver_seed=seed)
+                                     opt_gap = opt_gap, warm_start = warm_start, solver_seed=seed, next_fixed_len=next_fixed_len)
 
         warm_start  = result["warm_start"]
         init_states = result["InitialState"]
@@ -147,8 +154,21 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=Non
 
     return rh_time, ofv, fixed_sol
 
-commitment, ofv, _ = run_RH(data, F = F, L = L, T = T, write_csv = True, opt_gap = opt_gap, verbose = True, benchmark=False)
-print("OFV with RH according to function is: ", ofv)
+commitment, ofv, sol_to_plot = run_RH(data, F = F, L = L, T = T, write_csv = True, opt_gap = opt_gap, verbose = True, benchmark=False)
+
+import pandas as pd
+s = pd.Series(sol_to_plot['SoC'])                          # index is tuples (b,t)
+s.index = pd.MultiIndex.from_tuples(s.index, names=['b','t'])
+df_soc = s.reorder_levels(['t','b']).sort_index().unstack('b')  # index=t, columns=b
+
+# 3) quick plot — one color per battery
+import matplotlib.pyplot as plt
+ax = df_soc.plot(figsize=(10,6), linewidth=1.8, legend = False)
+ax.set_xlabel("Time (t)")
+ax.set_ylabel("SoC")
+ax.set_title(f"SoC by battery (T={T}, F={F}, L={L})")
+plt.tight_layout()
+plt.show()
 
 def sweep_RH(data, T =T, F_vals = [4,8], L_vals = [4,8], seeds=(41, 86, 55), opt_gap = opt_gap, only_valid = False, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = False):
 
