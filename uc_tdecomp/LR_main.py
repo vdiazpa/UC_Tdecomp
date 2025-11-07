@@ -232,7 +232,7 @@ if __name__ == "__main__":
         
     #==========================================================# Initialize Pool Process #=======
     t_all_start = perf_counter()
-    pool = Pool(processes=len(Time_windows), initializer = init_globals, initargs = (data, Time_windows, index_set))
+    pool     = Pool(processes=len(Time_windows), initializer = init_globals, initargs = (data, Time_windows, index_set))
     tasks0   = [(i, l, 0) for i in range(len(Time_windows))]
     results0 = pool.map(solver_function, tasks0)            # solves and stores
     Lag0, g0 = get_lagrange_and_g(results0, Time_windows)
@@ -345,8 +345,8 @@ if __name__ == "__main__":
         results_final = pool.map(solver_function, [(i, l, max_iters) for i in range(len(Time_windows))])
         Lag_final, _ = get_lagrange_and_g(results_final, Time_windows)
 
-        Lag_set.append(Lag_final)   # now you have the post-update dual
-        Level_vals.append(q)        # keep lengths aligned for plotting
+        Lag_set.append(Lag_final)   
+        Level_vals.append(q)       
         
         runs.append({ 'gamma': gamma, 'gamma_hat': gamma_hat, 'Lag_set': Lag_set, 'Level_vals': Level_vals, 'Runtime': LR_runtime, 'g_norm': g_length })
 
@@ -398,7 +398,6 @@ if __name__ == "__main__":
     plt.ylabel(r'$\|g\|_2$')
     plt.title(r'Subgradient norm over iterations: $\|g\|_2$')
 
-    # Legend INSIDE bottom-right; same style as first figure
     plt.legend(
         ncol=1,
         fontsize=9,

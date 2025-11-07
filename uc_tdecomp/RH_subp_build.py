@@ -104,13 +104,12 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt
             else:
                 m.Storage_constraints.add(m.SoC[b, t] == m.SoC[b, t-1]+ m.Storage_Efficiency[b] * m.ChargePower[b, t]- m.DischargePower[b, t] / m.Storage_Efficiency[b])
 
-            # relax integrality after t_fix1
             if t <= t_fix1:
                 m.Storage_constraints.add(m.IsCharging[b, t] + m.IsDischarging[b, t] <= 1)
                 m.Storage_constraints.add(m.ChargePower[b, t]  <= m.Storage_RoC[b] * m.IsCharging[b, t])
                 m.Storage_constraints.add(m.DischargePower[b, t] <= m.Storage_RoC[b] * m.IsDischarging[b, t])
             else:
-                m.IsCharging[b,t].domain    = UnitInterval
+                m.IsCharging[b,t].domain    = UnitInterval                   # relax integrality after t_fix1
                 m.IsDischarging[b,t].domain = UnitInterval
                 m.Storage_constraints.add(m.IsCharging[b, t] + m.IsDischarging[b, t] <= 1)
                 m.Storage_constraints.add(m.ChargePower[b, t]  <= m.Storage_RoC[b] * m.IsCharging[b, t])
@@ -123,13 +122,13 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt
         if gain_next >= m.SoCAtT0[b]:                   # if next window has plenty of time: enforce full neutrality now
             lb = m.SoCAtT0[b]
         else:
-            lb = max(0.0, m.SoCAtT0[b] - gain_next)    # if not enough time next window: enforce the “reachable target” lower bound now
+            lb = max(0.0, m.SoCAtT0[b] - gain_next)     # if not enough time next window: enforce  “reachable target” lower bound now
 
         m.Storage_constraints.add(m.SoC[b, t_fix1] >= lb) 
                    
     # # ======================================= Ramping & Logical Constraints ======================================= #
     
-    m.RampDown_constraints = ConstraintList(doc = 'ramp_down')
+    m.RampDown_constraints = ConstraintList(doc = 'ramp_dn')
     m.logical_constraints  = ConstraintList(doc = 'logical')
     m.RampUp_constraints   = ConstraintList(doc = 'ramp_up')     
     
@@ -229,14 +228,14 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt
 # ======================================= Warm Start ======================================= #
 
     if warm_start: 
-    # for (g,t), v in warm_start['UnitOn'].items():
-    #     m.UnitOn[g,t].value = int(round(v))
+        # for (g,t), v in warm_start['UnitOn'].items():
+        #     m.UnitOn[g,t].value = int(round(v))
             
-    # #     for (g,t), v in warm_start['UnitStart'].items():
-    # #         m.UnitStart[g,t].set_value(int(round(v)))
+        # for (g,t), v in warm_start['UnitStart'].items():
+        #     m.UnitStart[g,t].set_value(int(round(v)))
 
-    # #     for (g,t), v in warm_start['UnitStop'].items():
-    # #         m.UnitStop[g,t].set_value(int(round(v)))
+        # for (g,t), v in warm_start['UnitStop'].items():
+        #     m.UnitStop[g,t].set_value(int(round(v)))
         
         for (g,t), v in warm_start['PowerGenerated'].items():
             m.PowerGenerated[g,t].set_value(float(v))
