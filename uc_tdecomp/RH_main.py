@@ -7,8 +7,8 @@ import pandas as pd
 import numpy as np
 import csv
 
-# L = 12            # Lookahead
-# F = 8            # Roll forward period
+L = 12            # Lookahead
+F = 12            # Roll forward period
 T = 72            # length of planning horizon
 prt_cry = False  # Print carryover constraints
 opt_gap = 0.05   # Optimality gap for monolithic solve
@@ -105,7 +105,7 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=Non
     out_dir = "RH_plots"
     os.makedirs(out_dir, exist_ok=True)
 
-    # Plot (no legend) and save to folder
+    # Plot and save to folder
     ax = df_soc.plot(figsize=(10, 6), linewidth=1.8, legend=False)
     ax.set_xlabel("Time (t)")
     ax.set_ylabel("SoC")
@@ -240,13 +240,13 @@ def sweep_RH(data, T =T, F_vals = [4,8], L_vals = [4,8], seeds=(41, 86, 55), opt
     print(f"Wrote {len(df)} rows to {csv_path}")
     return df
 
-df = sweep_RH( data, T = T, F_vals = [4,8], L_vals = [4,8], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
-T = 168
-data =  load_csv_data(T)
-df2 = sweep_RH( data, T = T, F_vals = [4,8], L_vals = [4,8], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
-T = 336
-data =  load_csv_data(T)
-df3 = sweep_RH( data, T = T, F_vals = [4,8], L_vals = [4,8], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
+# df = sweep_RH( data, T = T, F_vals = [4,8], L_vals = [4,8], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
+# T = 168
+# data =  load_csv_data(T)
+# df2 = sweep_RH( data, T = T, F_vals = [4,8], L_vals = [4,8], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
+# T = 336
+# data =  load_csv_data(T)
+# df3 = sweep_RH( data, T = T, F_vals = [4,8], L_vals = [4,8], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
 
 ##############Plotting code##############
 

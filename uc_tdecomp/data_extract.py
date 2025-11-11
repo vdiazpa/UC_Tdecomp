@@ -268,6 +268,22 @@ def load_csv_data(T):
     start_cost  = gen_th["st_cost"].to_dict()
     commit_cost = gen_th["no_load"].to_dict()
 
+    all_gen_cost = {}
+    for index, row in gen_data.iterrows():
+        if row["typ"] == 'coal':
+            cost = row["heat_rate"] * 1.5 + row["var_om"]
+        if row["typ"] == 'oil':
+            cost = row["heat_rate"] * 10.0 + row["var_om"]
+        if row["typ"] in ["ngct", "ngcc"]:
+            cost = row["heat_rate"] * 3.4 + row["var_om"]
+        elif row["typ"] == 'nuc':
+            cost = 0.1
+        else:
+            cost = 0.5
+        all_gen_cost[row["name"]] = cost
+
+    gen_cost = {k:v for k,v in all_gen_cost.items() if k in ther_gens}
+
     # slp    = {g: pw_slope[g] for g in ther_gens if g in pw_slope}
     # intc   = {g: pw_intercept[g] for g in ther_gens if g in pw_intercept}
     # suC    = {g: elements["generator"][g]["startup_cost"] for g in ther_gens}
@@ -320,6 +336,7 @@ def load_csv_data(T):
         "gens": gens,
         "bats": bats,
         "SoC_init": SoC_init,
+        "gen_cost": gen_cost,
         "bus_ren_dict": bus_ren_dict,
         "bus_bat": bus_bat,
         "bat_bus": bat_bus,
