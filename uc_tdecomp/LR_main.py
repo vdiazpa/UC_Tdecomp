@@ -7,11 +7,13 @@ from multiprocessing import Pool
 import numpy as np
 import math
 import csv
+import multiprocessing as mp
 
 import logging
 logging.getLogger('pyomo.core').setLevel(logging.ERROR)
 
 USE_WARMSTART = False
+#WARMSTART_AFTER = 10
 
 # worker objects (globals)
  # Module level names that will exist in every worker process
@@ -23,7 +25,7 @@ MODEL_CACHE  = {}
 LAST_START   = {}
 
 #Define functions for main loop 
-def solve_and_return(m, opt, k, sub_id):
+def solve_and_return(m, opt, k, sub_id): #, use_warm):
     
     opt.set_objective(m.Objective)
     
@@ -108,7 +110,8 @@ def solver_function(task):
         opt = SolverFactory('gurobi_persistent')
         opt.options['OutputFlag'] = 0
         opt.options['Presolve'] = 2
-        opt.options['MIPGap'] = 0.2
+        opt.options['Threads'] = 1
+        opt.options['MIPGap'] = 0.05
         opt.set_instance(m)
         MODEL_CACHE[sub_id]  = m
         SOLVER_CACHE[sub_id] = opt
@@ -120,11 +123,17 @@ def solver_function(task):
     for key, val in lambda_obj.items():
         if key in m.L_index:
             m.L[key] = val
-            
+          
+    # use_warm = (USE_WARMSTART and k >= WARMSTART_AFTER) 
+    # if use_warm and sub_id in LAST_START:
+    #     _apply_start(m, LAST_START[sub_id])
+     
     if USE_WARMSTART and sub_id in LAST_START:
         _apply_start(m, LAST_START[sub_id])
-
+    
     return solve_and_return(m, opt, k, sub_id)
+
+    # return solve_and_return(m, opt, k, sub_id, use_warm)
 
 def _capture_start(m):
     start = {
@@ -161,16 +170,16 @@ def _capture_start(m):
 def _apply_start(m, start):
     """Assign Var.value; persistent solver reads these on set_warm_start()."""
     # binaries
-    for (g,t), v in start.get('UnitOn', {}).items():
-        if (g,t) in m.UnitOn: m.UnitOn[g,t].value = v
-    for (g,t), v in start.get('UnitStart', {}).items():
-        if (g,t) in m.UnitStart: m.UnitStart[g,t].value = v
-    for (g,t), v in start.get('UnitStop', {}).items():
-        if (g,t) in m.UnitStop: m.UnitStop[g,t].value = v
-    for (b,t), v in start.get('IsCharging', {}).items():
-        if (b,t) in m.IsCharging: m.IsCharging[b,t].value = v
-    for (b,t), v in start.get('IsDischarging', {}).items():
-        if (b,t) in m.IsDischarging: m.IsDischarging[b,t].value = v
+    # for (g,t), v in start.get('UnitOn', {}).items():
+    #     if (g,t) in m.UnitOn: m.UnitOn[g,t].value = v
+    # for (g,t), v in start.get('UnitStart', {}).items():
+    #     if (g,t) in m.UnitStart: m.UnitStart[g,t].value = v
+    # for (g,t), v in start.get('UnitStop', {}).items():
+    #     if (g,t) in m.UnitStop: m.UnitStop[g,t].value = v
+    # for (b,t), v in start.get('IsCharging', {}).items():
+    #     if (b,t) in m.IsCharging: m.IsCharging[b,t].value = v
+    # for (b,t), v in start.get('IsDischarging', {}).items():
+    #     if (b,t) in m.IsDischarging: m.IsDischarging[b,t].value = v
 
     # continuous
     for (g,t), v in start.get('PowerGenerated', {}).items():
@@ -187,7 +196,7 @@ if __name__ == "__main__":
 
     #======================================================================= Load Data =====
 
-    T = 72
+    T = 168
     #file_path  = "examples/unit_commitment/RTS_GMLC_zonal_noreserves.json"
     #data        = load_uc_data(file_path)
     data        = load_csv_data(T)
@@ -197,7 +206,7 @@ if __name__ == "__main__":
     
     #============================================================= Set Time Windows ===
     
-    subn         = 12                             # number of periods in subproblem
+    subn         = 48                             # number of periods in subproblem
     num_sh       = math.ceil(num_periods/subn)     # number of subproblems
     Time_windows = [list(range(i, min(i+subn, num_periods+1))) for i in range(1, num_periods+1, subn)]
     
@@ -231,25 +240,27 @@ if __name__ == "__main__":
     l0 = dict(l)  # initial lambda values
         
     #==========================================================# Initialize Pool Process #=======
+    num_cores = 12
+    num_winds = len(Time_windows)
     t_all_start = perf_counter()
-    pool     = Pool(processes=len(Time_windows), initializer = init_globals, initargs = (data, Time_windows, index_set))
+    pool     = Pool(processes=min(num_winds, num_cores), initializer = init_globals, initargs = (data, Time_windows, index_set))
     tasks0   = [(i, l, 0) for i in range(len(Time_windows))]
     results0 = pool.map(solver_function, tasks0)            # solves and stores
     Lag0, g0 = get_lagrange_and_g(results0, Time_windows)
     
     if T == 168: 
-        #q0 = 2471099193.65292 #w/o storage
-        q0 =  2777992669.3 #w/ storage
+        q0 =  2822785549.96 #w/ storage
+    elif T ==336: 
+        q0 = 5947447246.81
     else: 
-        #q0 = 1021672097.99475 #w/o storage
-        q0 =  1148691695.01 #w/ storage
+        q0 =  1159328025.82  #w/ storage
         
     t_after_init = perf_counter()
     print(f"\nInitial build and solve time: {t_after_init - t_all_start:.3f} secs", "\nqbar is: ", f"{q0:.2f}", '\n', "Dual Value is", f"{Lag0:.2f}")
 
     #==========================================================# Initialize Main Loop #==========    
     max_iters    = 30
-    LAMBDA_CONFIGS = [(0.2, 1.0), (0.4, 1.0), (0.6, 1.0)]
+    LAMBDA_CONFIGS = [(1.2, 1.3), (0.8, 1.3), (0.4, 1.3)]
 
     runs = []
     for (gamma, gamma_hat) in LAMBDA_CONFIGS:

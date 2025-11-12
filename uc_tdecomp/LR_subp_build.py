@@ -136,6 +136,8 @@ def build_LR_subprobs(data, s_e, index_set):
     
     m.Storage_constraints = ConstraintList(doc = 'SoC_constraints')
     
+    m.SoC_Under = Var(m.StorageUnits, within=NonNegativeReals)
+    
     for b in m.StorageUnits:
         for t in m.TimePeriods:
             m.Storage_constraints.add( m.ChargePower[b,t] <= m.Storage_RoC[b] * m.IsCharging[b,t] )
@@ -150,6 +152,9 @@ def build_LR_subprobs(data, s_e, index_set):
                     m.Storage_constraints.add( m.SoC[b,t] == m.SoCAtT0[b] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t] / m.Storage_Efficiency[b] )
                 else:
                     m.Storage_constraints.add( m.SoC[b,t] == m.SoC_copy[b,t-1] + m.ChargePower[b,t] * m.Storage_Efficiency[b] - m.DischargePower[b,t] / m.Storage_Efficiency[b] )  # SoC balance
+            
+            if t == m.Max_t:
+                m.Storage_constraints.add(m.SoC_Under[b] >= m.SoCAtT0[b] - m.SoC[b, t])
 
     # ======================================= Single Period Constraints ======================================= #
     
@@ -157,8 +162,8 @@ def build_LR_subprobs(data, s_e, index_set):
         thermal = sum(m.PowerGenerated[g,t] for g in data["ther_gens_by_bus"][b]) if b in data["ther_gens_by_bus"] else 0.0
         flows   = sum(m.Flow[l,t] * data['lTb'][(l,b)] for l in data['lines_by_bus'][b])
         shed    = m.LoadShed[b,t] if b in data["load_buses"] else 0.0
-        storage = 0.0 if b not in data['bus_bat'] else sum(m.DischargePower[bat,t] - m.ChargePower[bat,t] for bat in data['bus_bat'][b])
-        renew   = 0.0 if b not in data['bus_ren_dict'] else sum(m.RenPowerGenerated[g,t] for g in data['bus_ren_dict'][b])
+        storage = 0.0 if b not in data['bus_bat']       else sum(m.DischargePower[bat,t] - m.ChargePower[bat,t] for bat in data['bus_bat'][b])
+        renew   = 0.0 if b not in data['bus_ren_dict']  else sum(m.RenPowerGenerated[g,t]                       for g in data['bus_ren_dict'][b])
         return thermal + flows +  shed  + renew + storage >= data["demand"].get((b,t), 0.0)
     
     m.NodalBalance = Constraint(data["buses"], m.TimePeriods, rule = nb_rule)
@@ -196,34 +201,41 @@ def build_LR_subprobs(data, s_e, index_set):
                     m.RampDown_constraints.add(m.PowerGenerated_copy[g,t-1] - m.PowerGenerated[g,t] <= m.NominalRampDownLimit[g] * m.UnitOn[g, t] + m.ShutdownRampLimit[g] * m.UnitStop[g,t])
     
      # ======================================= Objective Function with penalties ======================================= #
+     
+    # Objective
+    def ofv(m):
+        start_cost = sum( m.StartUpCost[g] * m.UnitStart[g,t]              for g in m.ThermalGenerators   for t in m.TimePeriods)
+        on_cost    = sum( m.CommitmentCost[g] * m.UnitOn[g,t]              for g in m.ThermalGenerators   for t in m.TimePeriods)
+        power_cost = sum( data['gen_cost'][g]  * m.PowerGenerated[g,t]     for g in m.ThermalGenerators   for t in m.TimePeriods)
+        renew_cost = sum( 0.01 * m.RenPowerGenerated[g,t]                  for g in m.RenewableGenerators for t in m.TimePeriods)
+        disch_cost = sum( 20.0 * m.DischargePower[b,t]                     for b in m.StorageUnits        for t in m.TimePeriods)
+        shed_cost  = sum( 1000 * m.LoadShed[n,t]                           for n in data["load_buses"]    for t in m.TimePeriods)
 
-    if 1 not in s_e:
-        timeprice_index = tuple(sorted(set(s_e + [min(s_e)-1])))
-    else:
-        timeprice_index = tuple(sorted(s_e))
+        #stop_cost  = sum(   m.ShutDownCost[g] * m.UnitStop[g,t]   for g in m.ThermalGenerators for t in m.TimePeriods)
+        #c = sum(m.PowerCostVar[g,t] for g in m.ThermalGenerators for t in m.TimePeriods)
+        return   start_cost + on_cost + power_cost + shed_cost + renew_cost + disch_cost + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits) 
+       
 
-    m.TimePrice = Param(timeprice_index, initialize=lambda m, t: 20.0 if (int(t) % 24) in (16,17,18,19,20) else 5.0)
-    
     def ofv_start(m):
         shed_cost  = 1000*sum(        m.LoadShed[n,t]                         for n in data["load_buses"]   for t in m.TimePeriods)
         start_cost = sum(            m.StartUpCost[g] * m.UnitStart[g,t]      for g in m.ThermalGenerators  for t in m.TimePeriods)
         on_cost    = sum(     0.5*m.CommitmentCost[g] * m.UnitOn[g,t]         for g in m.ThermalGenerators  for t in m.Max_t) + sum(m.CommitmentCost[g] * m.UnitOn[g,t]    for g in m.ThermalGenerators   for t in inner_hrs)
-        pow_cost   = sum(              m.TimePrice[t] * m.PowerGenerated[g,t] for g in m.ThermalGenerators  for t in m.Max_t) + sum( m.TimePrice[t]  * m.PowerGenerated[g,t]  for g in m.ThermalGenerators   for t in inner_hrs)
+        pow_cost   = sum(         data['gen_cost'][g] * m.PowerGenerated[g,t] for g in m.ThermalGenerators  for t in m.Max_t) + sum(data['gen_cost'][g] * m.PowerGenerated[g,t]  for g in m.ThermalGenerators   for t in inner_hrs)
         pnlty_on   = sum(       m.L[(g, t, 'UnitOn')] * m.UnitOn[g,t]         for g in m.ThermalGenerators  for t in m.Max_t)   
         pnlty_UObl = sum(       m.L[(g, t, 'UT_Obl')] * m.UT_Obl_end[g,t]     for g in m.ThermalGenerators  for t in m.Max_t)
         pnlty_DObl = sum(       m.L[(g, t, 'DT_Obl')] * m.DT_Obl_end[g,t]     for g in m.ThermalGenerators  for t in m.Max_t)
         pnlty_gen  = sum( m.L[(g,t,'PowerGenerated')] * m.PowerGenerated[g,t] for g in m.ThermalGenerators  for t in m.Max_t) 
         pnlty_soc  = sum(            m.L[(g,t,'SoC')] * m.SoC[g,t]            for g in m.StorageUnits       for t in m.Max_t) 
 
-        return  start_cost  + on_cost + pow_cost + shed_cost +  pnlty_on + pnlty_gen + pnlty_UObl + pnlty_DObl + pnlty_soc
+        return  start_cost  + on_cost + pow_cost + shed_cost +  pnlty_on + pnlty_gen + pnlty_UObl + pnlty_DObl + pnlty_soc + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits) 
 
     def ofv(m):
         shed_cost      = 1000*sum(        m.LoadShed[n,t]                              for n in data["load_buses"]   for t in m.TimePeriods)
         st_cost        =      sum(       m.StartUpCost[g] * m.UnitStart[g,t]           for g in m.ThermalGenerators  for t in m.TimePeriods)
         on_cost        = 0.50*sum(    m.CommitmentCost[g] * m.UnitOn[g,t]              for g in m.ThermalGenerators  for t in m.Max_t) + sum( m.CommitmentCost[g] * m.UnitOn[g,t]    for g in m.ThermalGenerators for t in inner_hrs )
-        pow_cost       = 0.50*sum(         m.TimePrice[t] * m.PowerGenerated[g,t]      for g in m.ThermalGenerators  for t in m.Max_t) + sum( m.TimePrice[t] * m.PowerGenerated[g,t] for g in m.ThermalGenerators for t in inner_hrs)
+        pow_cost       = 0.50*sum(    data['gen_cost'][g] * m.PowerGenerated[g,t]      for g in m.ThermalGenerators  for t in m.Max_t) + sum( data['gen_cost'][g] * m.PowerGenerated[g,t] for g in m.ThermalGenerators for t in inner_hrs)
         on_cpy_cost    = 0.50*sum(    m.CommitmentCost[g] * m.UnitOn_copy[g,t]         for g in m.ThermalGenerators  for t in m.Min_t) 
-        pow_cpy_cost   = 0.50*sum(         m.TimePrice[t] * m.PowerGenerated_copy[g,t] for g in m.ThermalGenerators  for t in m.Min_t) 
+        pow_cpy_cost   = 0.50*sum(    data['gen_cost'][g] * m.PowerGenerated_copy[g,t] for g in m.ThermalGenerators  for t in m.Min_t) 
         pnlty_pow      = sum( m.L[(g,t,'PowerGenerated')] * m.PowerGenerated[g,t]      for g in m.ThermalGenerators  for t in m.Max_t) 
         pnlty_on       = sum(       m.L[(g, t, 'UnitOn')] * m.UnitOn[g,t]              for g in m.ThermalGenerators  for t in m.Max_t) 
         pnlty_UObl     = sum(       m.L[(g, t, 'UT_Obl')] * m.UT_Obl_end[g,t]          for g in m.ThermalGenerators  for t in m.Max_t)
@@ -237,22 +249,22 @@ def build_LR_subprobs(data, s_e, index_set):
 
         penalty_costs  = pnlty_on + pnlty_pow + pnlty_UObl + pnlty_DObl + pnlty_soc - pnlty_on_cpy - pnlty_pow_cpy - pnlty_UObl_cpy - pnlty_DObl_cpy - pnlty_soc_cpy
 
-        return st_cost + shed_cost + on_cost + on_cpy_cost + pow_cost + pow_cpy_cost + penalty_costs 
+        return st_cost + shed_cost + on_cost + on_cpy_cost + pow_cost + pow_cpy_cost + penalty_costs + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits) 
+       
     
     def ofv_end(m):
         st_cost        =      sum(      m.StartUpCost[g] * m.UnitStart[g,t]           for g in m.ThermalGenerators  for t in m.TimePeriods)
         shed_cost      = 1000*sum(      m.LoadShed[n, t]                              for n in data["load_buses"]   for t in m.TimePeriods)
         on_cost        = 0.50*sum(   m.CommitmentCost[g] * m.UnitOn_copy[g,t]         for g in m.ThermalGenerators  for t in m.Min_t) + sum( m.CommitmentCost[g] * m.UnitOn[g,t]       for g in m.ThermalGenerators   for t in m.TimePeriods)
-        pow_cost       = 0.50*sum(        m.TimePrice[t] * m.PowerGenerated_copy[g,t] for g in m.ThermalGenerators  for t in m.Min_t) + sum( m.TimePrice[t]  * m.PowerGenerated[g,t]   for g in m.ThermalGenerators   for t in m.TimePeriods)
+        pow_cost       = 0.50*sum(   data['gen_cost'][g] * m.PowerGenerated_copy[g,t] for g in m.ThermalGenerators  for t in m.Min_t) + sum( data['gen_cost'][g] * m.PowerGenerated[g,t]   for g in m.ThermalGenerators   for t in m.TimePeriods)
         pnlty_on_cpy   = sum(      m.L[(g, t, 'UnitOn')] * m.UnitOn_copy[g,t]         for g in m.ThermalGenerators  for t in m.Min_t)
         pnlty_UObl_cpy = sum(      m.L[(g, t, 'UT_Obl')] * m.UT_Obl_copy[g,t]         for g in m.ThermalGenerators  for t in m.Min_t)
         pnlty_DObl_cpy = sum(      m.L[(g, t, 'DT_Obl')] * m.DT_Obl_copy[g,t]         for g in m.ThermalGenerators  for t in m.Min_t)
         pnlty_pow_cpy  = sum(m.L[(g,t,'PowerGenerated')] * m.PowerGenerated_copy[g,t] for g in m.ThermalGenerators  for t in m.Min_t)
         pnlty_soc_cpy  = sum(         m.L[(g, t, 'SoC')] * m.SoC_copy[g,t]            for g in m.StorageUnits       for t in m.Min_t)
 
-
-        return   st_cost + on_cost + pow_cost + shed_cost - 1 * (pnlty_on_cpy + pnlty_pow_cpy + pnlty_UObl_cpy + pnlty_DObl_cpy + pnlty_soc_cpy)
-        
+        return   st_cost + on_cost + pow_cost + shed_cost - 1 * (pnlty_on_cpy + pnlty_pow_cpy + pnlty_UObl_cpy + pnlty_DObl_cpy + pnlty_soc_cpy) + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits) 
+       
     if 1 in s_e: 
         m.Objective = Objective(rule=ofv_start, sense=minimize)
     elif max(s_e) == len(data['periods']):    

@@ -167,7 +167,7 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_s
     for b in m.StorageUnits:
         for t in m.TimePeriods:
             if t % 24 == 0:
-                #m.SOC_constraints.add(m.SoC[b,t] >= m.SoCAtT0[b])  
+                #m.SoC_constraints.add(m.SoC[b,t] >= m.SoCAtT0[b])  
                 m.SoC_constraints.add(m.SoC_Under[b] >= m.SoCAtT0[b] - m.SoC[b, t])
 
             if t == m.InitialTime:
@@ -195,12 +195,18 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_s
         for (g, t), val in fixed_commitment['UnitStop'].items():
             m.UnitStop[g, t].setlb(val)
             m.UnitStop[g, t].setub(val)
+        for (g, t), val in fixed_commitment['PowerGenerated'].items():
+            m.PowerGenerated[g, t].setlb(val)
+            m.PowerGenerated[g, t].setub(val)
         for (b, t), val in fixed_commitment['IsCharging'].items():
             m.IsCharging[b, t].setlb(val)
             m.IsCharging[b, t].setub(val)
         for (b, t), val in fixed_commitment['IsDischarging'].items():
             m.IsDischarging[b, t].setlb(val)
             m.IsDischarging[b, t].setub(val)
+        for (b, t), val in fixed_commitment['SoC'].items():
+            m.SoC[b, t].setlb(val)
+            m.SoC[b, t].setub(val)
             
  # ======================================= Objective Function ======================================= #
 
@@ -262,6 +268,23 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_s
         'IsCharging':     {(b,t): value(m.IsCharging[b,t])     for b in m.StorageUnits for t in range(m.InitialTime, m.FinalTime+1)},
         'IsDischarging':  {(b,t): value(m.IsDischarging[b,t])  for b in m.StorageUnits for t in range(m.InitialTime, m.FinalTime+1)}})
     
+    import pandas as pd
+    import matplotlib.pyplot as plt
+
+    # --- Monolithic SoC plot ---
+
+    soc_mono = return_object['vars']['SoC']          
+    s = pd.Series(soc_mono)
+    s.index = pd.MultiIndex.from_tuples(s.index, names=['b','t'])
+    df_soc = s.reorder_levels(['t','b']).sort_index().unstack('b')
+
+    ax = df_soc.plot(figsize=(10, 6),linewidth=1.8,legend=False)
+    ax.set_xlabel("Time (t)")
+    ax.set_ylabel("SoC")
+    ax.set_title(f"SoC by battery (T={T}, Monolithic UC)")
+    plt.tight_layout()
+    plt.show()
+
     if save_sol:
         import csv
         all_t = sorted({t for t in m.TimePeriods})

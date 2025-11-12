@@ -169,10 +169,10 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt
     
     m.Storage_constraints = ConstraintList(doc='SoC_constraints')
 
-    m.soc_under = Var(m.StorageUnits, within=NonNegativeReals)
+    m.SoC_Under = Var(m.StorageUnits, within=NonNegativeReals)
     
     for b in m.StorageUnits:
-        m.Storage_constraints.add(m.soc_under[b] >= m.SoCAtT0[b] - m.SoC[b, t_fix1])
+        m.Storage_constraints.add(m.SoC_Under[b] >= m.SoCAtT0[b] - m.SoC[b, t_fix1])
 
     # if (t_fix1 % 24) == 0:
     #     for b in m.StorageUnits:
@@ -211,8 +211,6 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt
     # m.PiecewiseCost = Constraint(m.ThermalGenerators, m.TimePeriods, m.CostSegments, rule=lambda m, g, t, s:
     #     m.PowerCostVar[g, t] >= (m.PowerGenerated[g, t] * data['slp'][g][s-1]) + (m.UnitOn[g, t] * data['intc'][g][s-1]) )
 
-
-
     # m.TimePrice = Param(m.TimePeriods, initialize=lambda m, t: 20.0 if (int(t) % 24) in (16, 17, 18, 19, 20) else 5.0)
 
     def ofv(m):
@@ -226,7 +224,7 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt
         #stop_cost  = sum(   m.ShutDownCost[g] * m.UnitStop[g,t]   for g in m.ThermalGenerators for t in m.TimePeriods)
         #c = sum(m.PowerCostVar[g,t] for g in m.ThermalGenerators for t in m.TimePeriods)
         
-        return start_cost + on_cost + power_cost + shed_cost + renew_cost + disch_cost + 5000 * sum(m.soc_under[b] for b in m.StorageUnits) 
+        return start_cost + on_cost + power_cost + shed_cost + renew_cost + disch_cost + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits) 
         
     m.Objective = Objective(rule=ofv, sense=minimize)
 
@@ -258,7 +256,7 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt
 
     #Solve 
     opt = SolverFactory('gurobi')
-    opt.options['MIPGap']      = 0.05
+    opt.options['MIPGap']      = 0.15
     #opt.options['MIPFocus']   = 2
 
     # t_attach = perf_counter()       # --------- start ATTACH timer

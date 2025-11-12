@@ -8,7 +8,7 @@ import numpy as np
 import csv
 
 L = 12            # Lookahead
-F = 12            # Roll forward period
+F = 24            # Roll forward period
 T = 72            # length of planning horizon
 prt_cry = False  # Print carryover constraints
 opt_gap = 0.05   # Optimality gap for monolithic solve
@@ -60,7 +60,7 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=Non
         T = max(data["periods"])
 
     windows, fixes = RH_windows_fixes(T, F, L)
-    fixed_sol   = {"UnitOn":{}, "UnitStart":{}, "UnitStop":{}, 'IsCharging':{}, 'IsDischarging':{}, 'SoC':{}, 'ChargePower':{}, 'DischargePower':{}}
+    fixed_sol   = {"UnitOn":{}, "UnitStart":{}, "UnitStop":{}, 'IsCharging':{}, 'IsDischarging':{}, 'SoC':{}, 'ChargePower':{}, 'DischargePower':{}, 'PowerGenerated':{}}
     warm_start  = None
     init_states = {}
 
@@ -94,26 +94,26 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=Non
 
     rh_time = perf_counter() - t0
     
-    import os
-    import pandas as pd
-    import matplotlib.pyplot as plt
+    # import os
+    # import pandas as pd
+    # import matplotlib.pyplot as plt
 
-    s = pd.Series(fixed_sol['SoC'])
-    s.index = pd.MultiIndex.from_tuples(s.index, names=['b', 't'])
-    df_soc = s.reorder_levels(['t', 'b']).sort_index().unstack('b')
+    # s = pd.Series(fixed_sol['SoC'])
+    # s.index = pd.MultiIndex.from_tuples(s.index, names=['b', 't'])
+    # df_soc = s.reorder_levels(['t', 'b']).sort_index().unstack('b')
 
-    out_dir = "RH_plots"
-    os.makedirs(out_dir, exist_ok=True)
+    # out_dir = "RH_plots"
+    # os.makedirs(out_dir, exist_ok=True)
 
-    # Plot and save to folder
-    ax = df_soc.plot(figsize=(10, 6), linewidth=1.8, legend=False)
-    ax.set_xlabel("Time (t)")
-    ax.set_ylabel("SoC")
-    ax.set_title(f"SoC by battery (T={T}, F={F}, L={L})")
-    plt.tight_layout()
+    # # Plot and save to folder
+    # ax = df_soc.plot(figsize=(10, 6), linewidth=1.8, legend=False)
+    # ax.set_xlabel("Time (t)")
+    # ax.set_ylabel("SoC")
+    # ax.set_title(f"SoC by battery (T={T}, F={F}, L={L})")
+    # plt.tight_layout()
 
-    plt.savefig(os.path.join(out_dir, f"SoC_T{T}_F{F}_L{L}.png"), dpi=300)
-    plt.close()
+    # plt.savefig(os.path.join(out_dir, f"SoC_T{T}_F{F}_L{L}.svg"), dpi=300)
+    # plt.close()
 
     if verbose:
         print(f"\nTotal RH time: {rh_time:.3f} secs")
@@ -177,20 +177,20 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=Non
 
 commitment, ofv, sol_to_plot = run_RH(data, F = F, L = L, T = T, write_csv = True, opt_gap = opt_gap, verbose = True, benchmark=False)
 
-import pandas as pd
-s = pd.Series(sol_to_plot['SoC'])                               # index is tuples (b,t)
-s.index = pd.MultiIndex.from_tuples(s.index, names=['b','t'])
-df_soc = s.reorder_levels(['t','b']).sort_index().unstack('b')  # index=t, columns=b
+# import pandas as pd
+# s = pd.Series(sol_to_plot['SoC'])                               # index is tuples (b,t)
+# s.index = pd.MultiIndex.from_tuples(s.index, names=['b','t'])
+# df_soc = s.reorder_levels(['t','b']).sort_index().unstack('b')  # index=t, columns=b
 
-import matplotlib.pyplot as plt
-ax = df_soc.plot(figsize=(10,6), linewidth=1.8, legend = False)
-ax.set_xlabel("Time (t)")
-ax.set_ylabel("SoC")
-ax.set_title(f"SoC by battery (T={T}, F={F}, L={L})")
-plt.tight_layout()
-plt.show()
+# import matplotlib.pyplot as plt
+# ax = df_soc.plot(figsize=(10,6), linewidth=1.8, legend = False)
+# ax.set_xlabel("Time (t)")
+# ax.set_ylabel("SoC")
+# ax.set_title(f"SoC by battery (T={T}, F={F}, L={L})")
+# plt.tight_layout()
+# plt.show()
 
-def sweep_RH(data, T =T, F_vals = [4,8], L_vals = [4,8], seeds=(41, 86, 55), opt_gap = opt_gap, only_valid = False, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = False):
+def sweep_RH(data, T =T, F_vals = [8, 12, 24], L_vals = [8, 12, 24], seeds=(41, 86, 55), opt_gap = opt_gap, only_valid = False, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = False):
 
     records = []
     for F in F_vals:
@@ -240,13 +240,13 @@ def sweep_RH(data, T =T, F_vals = [4,8], L_vals = [4,8], seeds=(41, 86, 55), opt
     print(f"Wrote {len(df)} rows to {csv_path}")
     return df
 
-# df = sweep_RH( data, T = T, F_vals = [4,8], L_vals = [4,8], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
+# df = sweep_RH( data, T = T, F_vals = [8, 12, 24], L_vals = [8, 12, 24], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
 # T = 168
 # data =  load_csv_data(T)
-# df2 = sweep_RH( data, T = T, F_vals = [4,8], L_vals = [4,8], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
+# df2 = sweep_RH( data, T = T, F_vals = [8, 12, 24], L_vals = [8, 12, 24], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
 # T = 336
 # data =  load_csv_data(T)
-# df3 = sweep_RH( data, T = T, F_vals = [4,8], L_vals = [4,8], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
+# df3 = sweep_RH( data, T = T, F_vals = [8, 12, 24], L_vals = [8, 12, 24], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
 
 ##############Plotting code##############
 
