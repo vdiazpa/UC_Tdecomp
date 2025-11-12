@@ -3,14 +3,12 @@ from pyomo.environ import *
 import numpy as np
 #from time import perf_counter
 
-def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt_gap=0.01, warm_start = None, solver_seed=None, next_fixed_len=0):
+def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, warm_start = None, RH_opt_gap=0.05):
     
     #t0 = perf_counter()
     m = ConcreteModel()
 
-    t_fix0, t_fix1 = fixed
-    F_k = t_fix1 - t_fix0 + 1   
-    
+    _, t_fix1 = fixed    
 
     # ======================== Sets
     
@@ -211,8 +209,6 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt
     # m.PiecewiseCost = Constraint(m.ThermalGenerators, m.TimePeriods, m.CostSegments, rule=lambda m, g, t, s:
     #     m.PowerCostVar[g, t] >= (m.PowerGenerated[g, t] * data['slp'][g][s-1]) + (m.UnitOn[g, t] * data['intc'][g][s-1]) )
 
-    # m.TimePrice = Param(m.TimePeriods, initialize=lambda m, t: 20.0 if (int(t) % 24) in (16, 17, 18, 19, 20) else 5.0)
-
     def ofv(m):
         start_cost = sum( m.StartUpCost[g] * m.UnitStart[g,t]         for g in m.ThermalGenerators   for t in m.TimePeriods)
         on_cost    = sum( m.CommitmentCost[g] * m.UnitOn[g,t]         for g in m.ThermalGenerators   for t in m.TimePeriods)
@@ -256,7 +252,7 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, opt
 
     #Solve 
     opt = SolverFactory('gurobi')
-    opt.options['MIPGap']      = 0.15
+    opt.options['MIPGap']      = RH_opt_gap
     #opt.options['MIPFocus']   = 2
 
     # t_attach = perf_counter()       # --------- start ATTACH timer

@@ -11,7 +11,8 @@ L = 12            # Lookahead
 F = 24            # Roll forward period
 T = 72            # length of planning horizon
 prt_cry = False  # Print carryover constraints
-opt_gap = 0.05   # Optimality gap for monolithic solve
+opt_gap = 0.01   # Optimality gap for monolithic solve
+RH_opt_gap = 0.05  # Optimality gap for RH subproblems
 
 ################################### Load data #####################################
 #file_path  = "examples/unit_commitment/RTS_GMLC_zonal_noreserves.json"
@@ -54,13 +55,13 @@ def RH_windows_fixes(T, F, L):
     return windows, fixes
 
 
-def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=None):
+def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=None, RH_opt_gap= RH_opt_gap):
     # Will run the rolling horizon algorithm given T, L, and F. 
     if T is None: 
         T = max(data["periods"])
 
     windows, fixes = RH_windows_fixes(T, F, L)
-    fixed_sol   = {"UnitOn":{}, "UnitStart":{}, "UnitStop":{}, 'IsCharging':{}, 'IsDischarging':{}, 'SoC':{}, 'ChargePower':{}, 'DischargePower':{}, 'PowerGenerated':{}}
+    fixed_sol   = {"UnitOn":{}, "UnitStart":{}, "UnitStop":{}, 'IsCharging':{}, 'IsDischarging':{}, 'SoC':{}, 'ChargePower':{}, 'DischargePower':{}}
     warm_start  = None
     init_states = {}
 
@@ -72,17 +73,11 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=Non
     for i, (window, fix_periods) in enumerate(zip(windows, fixes)):
         t_fix0, t_fix1 = fix_periods
         
-        if i+1 < len(fixes):
-            nf0, nf1 = fixes[i+1]
-            next_fixed_len = nf1 - nf0 + 1
-        else:
-            next_fixed_len = 0
-        
         if verbose:
             print(f"Window {i+1}/{len(windows)}: {window} | fix {fix_periods}")
 
         result = build_RH_subprobs(data, window, init_states if i>0 else {}, fix_periods, print_carryover = prt_cry, 
-                                     opt_gap = opt_gap, warm_start = warm_start, solver_seed=seed, next_fixed_len=next_fixed_len)
+                                     warm_start = warm_start, RH_opt_gap=RH_opt_gap)
 
         warm_start  = result["warm_start"]
         init_states = result["InitialState"]
@@ -118,7 +113,7 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=Non
     if verbose:
         print(f"\nTotal RH time: {rh_time:.3f} secs")
 
-    eval_res = benchmark_UC_build(data, opt_gap, fixed_commitment = fixed_sol)
+    eval_res = benchmark_UC_build(data, opt_gap, fixed_commitment = fixed_sol, F=F, L=L)
     ofv      = eval_res.get("ofv", None)
 
     if write_csv:           # Collect all time periods and generators
@@ -190,7 +185,7 @@ commitment, ofv, sol_to_plot = run_RH(data, F = F, L = L, T = T, write_csv = Tru
 # plt.tight_layout()
 # plt.show()
 
-def sweep_RH(data, T =T, F_vals = [8, 12, 24], L_vals = [8, 12, 24], seeds=(41, 86, 55), opt_gap = opt_gap, only_valid = False, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = False):
+def sweep_RH(data, T =T, F_vals = [12,24], L_vals = [12], seeds=(41, 86, 55), opt_gap = opt_gap, only_valid = False, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = False):
 
     records = []
     for F in F_vals:
@@ -240,13 +235,13 @@ def sweep_RH(data, T =T, F_vals = [8, 12, 24], L_vals = [8, 12, 24], seeds=(41, 
     print(f"Wrote {len(df)} rows to {csv_path}")
     return df
 
-# df = sweep_RH( data, T = T, F_vals = [8, 12, 24], L_vals = [8, 12, 24], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
+# df = sweep_RH( data, T = T, F_vals = [12,24], L_vals = [12], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
 # T = 168
 # data =  load_csv_data(T)
-# df2 = sweep_RH( data, T = T, F_vals = [8, 12, 24], L_vals = [8, 12, 24], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
+# df2 = sweep_RH( data, T = T, F_vals = [12,24], L_vals = [12], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
 # T = 336
 # data =  load_csv_data(T)
-# df3 = sweep_RH( data, T = T, F_vals = [8, 12, 24], L_vals = [8, 12, 24], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
+# df3 = sweep_RH( data, T = T, F_vals = [12,24], L_vals = [12], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
 
 ##############Plotting code##############
 

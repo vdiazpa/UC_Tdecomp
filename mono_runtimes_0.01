@@ -1,0 +1,33 @@
+Monolthic Solve with 1% optimality gap (0.01):
+Mono = 0.01 (1%), RH = 0.05 (5%)
+T = 336h,
+Total RH time: 189.878 secs
+fixing inputed variable values
+Heuristic cost with stitched commitments: 5964866534.55
+
+build time monolithic: 24.280196875333786
+Monolithic UC cost with opt gap 0.01 is: 5958196254.98
+Monolithic build + solve time: 1188.7
+
+T = 168,
+Total RH time: 110.818 secs
+fixing inputed variable values
+Heuristic cost with stitched commitments: 2822785549.96
+
+build time monolithic: 12.448633375111967
+Monolithic UC cost with opt gap 0.01 is: 2805888715.98
+Monolithic build + solve time: 393.62
+
+T = 72
+Total RH time: 48.671 secs
+fixing inputed variable values
+Heuristic cost with stitched commitments: 1175106609.19
+
+build time monolithic: 5.0907129580155015
+Monolithic UC cost with opt gap 0.01 is: 1155799354.41
+Monolithic build + solve time: 102.79
+
+T	RH Cost	Mono Cost	Opt Gap
+336	5964866535	5958196255	0.111826133
+168	2822785550	2805888716	0.598587235
+72	1175106609	1155799354	1.643021546
