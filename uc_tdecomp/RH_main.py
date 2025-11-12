@@ -151,19 +151,6 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=Non
 
 #commitment, ofv, sol_to_plot = run_RH(data, F = F, L = L, T = T, write_csv = True, opt_gap = opt_gap, verbose = True, benchmark=False)
 
-# import pandas as pd
-# s = pd.Series(sol_to_plot['SoC'])                               # index is tuples (b,t)
-# s.index = pd.MultiIndex.from_tuples(s.index, names=['b','t'])
-# df_soc = s.reorder_levels(['t','b']).sort_index().unstack('b')  # index=t, columns=b
-
-# import matplotlib.pyplot as plt
-# ax = df_soc.plot(figsize=(10,6), linewidth=1.8, legend = False)
-# ax.set_xlabel("Time (t)")
-# ax.set_ylabel("SoC")
-# ax.set_title(f"SoC by battery (T={T}, F={F}, L={L})")
-# plt.tight_layout()
-# plt.show()
-
 def sweep_RH(data, T =T, F_vals = [12,24], L_vals = [8,12], seeds=(41, 86, 55), opt_gap = opt_gap, only_valid = False, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = False):
 
     records = []
