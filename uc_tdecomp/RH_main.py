@@ -7,12 +7,12 @@ import pandas as pd
 import numpy as np
 import csv
 
-L = 12            # Lookahead
-F = 24            # Roll forward period
-T = 72            # length of planning horizon
-prt_cry = False  # Print carryover constraints
-opt_gap = 0.01   # Optimality gap for monolithic solve
-RH_opt_gap = 0.05  # Optimality gap for RH subproblems
+# L = 12             # Lookahead
+# F = 12             # Roll forward period
+T = 72             # length of planning horizon
+prt_cry = False    # Print carryover constraints#
+opt_gap = 0.01     # Optimality gap for monolithic solve
+RH_opt_gap = 0.5  # Optimality gap for RH subproblems
 
 ################################### Load data #####################################
 #file_path  = "examples/unit_commitment/RTS_GMLC_zonal_noreserves.json"
@@ -89,27 +89,6 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=Non
 
     rh_time = perf_counter() - t0
     
-    # import os
-    # import pandas as pd
-    # import matplotlib.pyplot as plt
-
-    # s = pd.Series(fixed_sol['SoC'])
-    # s.index = pd.MultiIndex.from_tuples(s.index, names=['b', 't'])
-    # df_soc = s.reorder_levels(['t', 'b']).sort_index().unstack('b')
-
-    # out_dir = "RH_plots"
-    # os.makedirs(out_dir, exist_ok=True)
-
-    # # Plot and save to folder
-    # ax = df_soc.plot(figsize=(10, 6), linewidth=1.8, legend=False)
-    # ax.set_xlabel("Time (t)")
-    # ax.set_ylabel("SoC")
-    # ax.set_title(f"SoC by battery (T={T}, F={F}, L={L})")
-    # plt.tight_layout()
-
-    # plt.savefig(os.path.join(out_dir, f"SoC_T{T}_F{F}_L{L}.svg"), dpi=300)
-    # plt.close()
-
     if verbose:
         print(f"\nTotal RH time: {rh_time:.3f} secs")
 
@@ -170,7 +149,7 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=Non
 
     return rh_time, ofv, fixed_sol
 
-commitment, ofv, sol_to_plot = run_RH(data, F = F, L = L, T = T, write_csv = True, opt_gap = opt_gap, verbose = True, benchmark=False)
+#commitment, ofv, sol_to_plot = run_RH(data, F = F, L = L, T = T, write_csv = True, opt_gap = opt_gap, verbose = True, benchmark=False)
 
 # import pandas as pd
 # s = pd.Series(sol_to_plot['SoC'])                               # index is tuples (b,t)
@@ -185,7 +164,7 @@ commitment, ofv, sol_to_plot = run_RH(data, F = F, L = L, T = T, write_csv = Tru
 # plt.tight_layout()
 # plt.show()
 
-def sweep_RH(data, T =T, F_vals = [12,24], L_vals = [12], seeds=(41, 86, 55), opt_gap = opt_gap, only_valid = False, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = False):
+def sweep_RH(data, T =T, F_vals = [12,24], L_vals = [8,12], seeds=(41, 86, 55), opt_gap = opt_gap, only_valid = False, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = False):
 
     records = []
     for F in F_vals:
@@ -197,11 +176,7 @@ def sweep_RH(data, T =T, F_vals = [12,24], L_vals = [12], seeds=(41, 86, 55), op
             for s in seeds:
                 try:
                     rh_time, ofv, _ = run_RH(
-                        data, F, L, T,
-                        opt_gap=opt_gap,
-                        write_csv=False,
-                        verbose=verbose and (s == seeds[0]),  # print once per (F,L) 
-                        seed=s)
+                        data, F, L, T, opt_gap=opt_gap, write_csv=False, verbose=verbose and (s == seeds[0]))
                     times.append(rh_time)
                     ofvs.append(ofv)
                 except Exception as e:
@@ -235,13 +210,13 @@ def sweep_RH(data, T =T, F_vals = [12,24], L_vals = [12], seeds=(41, 86, 55), op
     print(f"Wrote {len(df)} rows to {csv_path}")
     return df
 
-# df = sweep_RH( data, T = T, F_vals = [12,24], L_vals = [12], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
-# T = 168
-# data =  load_csv_data(T)
-# df2 = sweep_RH( data, T = T, F_vals = [12,24], L_vals = [12], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
-# T = 336
-# data =  load_csv_data(T)
-# df3 = sweep_RH( data, T = T, F_vals = [12,24], L_vals = [12], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
+df = sweep_RH( data, T = T, F_vals = [12,24], L_vals = [12], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
+T = 168
+data =  load_csv_data(T)
+df2 = sweep_RH( data, T = T, F_vals = [12,24], L_vals = [12], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
+T = 336
+data =  load_csv_data(T)
+df3 = sweep_RH( data, T = T, F_vals = [12,24], L_vals = [12], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
 
 ##############Plotting code##############
 

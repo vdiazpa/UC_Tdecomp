@@ -4,7 +4,7 @@ from pyomo.environ import *
 from time import perf_counter
 
 
-T = 336
+T = 72
 file_path  = "./RTS_GMLC_zonal_noreserves.json"
 #file_path = "examples/unit_commitment/tiny_rts_ready.json"
 
@@ -278,11 +278,11 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_s
     # out_dir = "RH_plots"
     # os.makedirs(out_dir, exist_ok=True)
 
-    # # Plot and save to folder
+    # Plot and save to folder
     # ax = df_soc.plot(figsize=(10, 6), linewidth=1.8, legend=False)
     # ax.set_xlabel("Time (t)")
     # ax.set_ylabel("SoC")
-    # ax.set_title(f"SoC by battery (T={T}, F={F}, L={L})")
+    # ax.set_title(f"SoC by battery (T={T}, Monolithic UC)")
     # plt.tight_layout()
 
     # plt.savefig(os.path.join(out_dir, f"SoC_T{T}_F{F}_L{L}.svg"), dpi=300)
@@ -293,17 +293,17 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_s
     s.index = pd.MultiIndex.from_tuples(s.index, names=['b','t'])
     df_soc = s.reorder_levels(['t','b']).sort_index().unstack('b')
     
-    out_dir = "RH_plots_rev_rev"
+    out_dir = "RH_plots_final"
     os.makedirs(out_dir, exist_ok=True)
 
     ax = df_soc.plot(figsize=(10, 6),linewidth=1.8,legend=False)
     ax.set_xlabel("Time (t)")
     ax.set_ylabel("SoC")
-    #ax.set_title(f"SoC by battery (T={T}, Monolithic UC)")
-    ax.set_title(f"SoC by battery (T={T}, F = {F}, L = {L})")
+    ax.set_title(f"SoC by battery (T={T}, F={F}, L={L})")
+    fig = ax.get_figure()
     plt.tight_layout()
-    plt.savefig(os.path.join(out_dir, f"SoC_T{T}_F{F}_L{L}.svg"), dpi=300)
-
+    plt.savefig(os.path.join(out_dir, f"RHSoC_T{T}_F{F}_L{L}.svg"), dpi=300)
+    plt.close(fig)
 
     if save_sol:
         import csv

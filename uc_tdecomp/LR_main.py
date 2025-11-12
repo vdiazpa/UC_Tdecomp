@@ -251,16 +251,16 @@ if __name__ == "__main__":
     if T == 168: 
         q0 =  2822785549.96 #w/ storage
     elif T ==336: 
-        q0 = 5947447246.81
+        q0 = 5964866534.55
     else: 
-        q0 =  1159328025.82  #w/ storage
+        q0 =  1175106609.19  #w/ storage
         
     t_after_init = perf_counter()
     print(f"\nInitial build and solve time: {t_after_init - t_all_start:.3f} secs", "\nqbar is: ", f"{q0:.2f}", '\n', "Dual Value is", f"{Lag0:.2f}")
 
     #==========================================================# Initialize Main Loop #==========    
     max_iters    = 30
-    LAMBDA_CONFIGS = [(1.2, 1.3), (0.8, 1.3), (0.4, 1.3)]
+    LAMBDA_CONFIGS = [(0.2, 1), (0.4, 1), (0.6, 1)]
 
     runs = []
     for (gamma, gamma_hat) in LAMBDA_CONFIGS:
