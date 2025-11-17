@@ -6,14 +6,17 @@ from time import perf_counter
 from multiprocessing import Pool
 import numpy as np
 import math
+import json
 import csv
+import pandas as pd
 import multiprocessing as mp
+import matplotlib.pyplot as plt
+import os
 
 import logging
 logging.getLogger('pyomo.core').setLevel(logging.ERROR)
 
 USE_WARMSTART = False
-#WARMSTART_AFTER = 10
 
 # worker objects (globals)
  # Module level names that will exist in every worker process
@@ -24,7 +27,7 @@ SOLVER_CACHE = {}
 MODEL_CACHE  = {}
 LAST_START   = {}
 
-#Define functions for main loop 
+#Define helper functions for main loop 
 def solve_and_return(m, opt, k, sub_id): #, use_warm):
     
     opt.set_objective(m.Objective)
@@ -123,17 +126,11 @@ def solver_function(task):
     for key, val in lambda_obj.items():
         if key in m.L_index:
             m.L[key] = val
-          
-    # use_warm = (USE_WARMSTART and k >= WARMSTART_AFTER) 
-    # if use_warm and sub_id in LAST_START:
-    #     _apply_start(m, LAST_START[sub_id])
      
     if USE_WARMSTART and sub_id in LAST_START:
         _apply_start(m, LAST_START[sub_id])
     
     return solve_and_return(m, opt, k, sub_id)
-
-    # return solve_and_return(m, opt, k, sub_id, use_warm)
 
 def _capture_start(m):
     start = {
@@ -190,13 +187,46 @@ def _apply_start(m, start):
         if (b,t) in m.ChargePower: m.ChargePower[b,t].value = v
     for (b,t), v in start.get('DischargePower', {}).items():
         if (b,t) in m.DischargePower: m.DischargePower[b,t].value = v
+        
+def sanitize(x):
+    s = f"{x}".replace("_", "m").replace(".", "p")
+    return s
+
+def save_run_csv(T, subn, gamma, gamma_hat, Lag_set, g_norm, Level_vals, out_dir="LR_runs"):
+    os.makedirs(out_dir, exist_ok=True)
+    iters = list(range(len(Lag_set)))
+    dual  = np.asarray(Lag_set, dtype=float)
+    lbest = np.maximum.accumulate(dual)
+    level = np.asarray(Level_vals[:len(dual)], dtype=float)
+    gnorm = np.asarray(g_norm + [np.nan]*(len(dual)-len(g_norm)), dtype=float)
+
+    df = pd.DataFrame({"iteration": iters,"dual": dual,"best_dual": lbest,"level": level,"g_norm": gnorm})
+
+    base = f"T{T}_W{subn}_g{sanitize(gamma)}_ghat{sanitize(gamma_hat)}"
+    csv_path  = os.path.join(out_dir, f"lr_{base}.csv")
+    meta_path = os.path.join(out_dir, f"lr_{base}.meta.json")
+
+    df.to_csv(csv_path, index=False)
+    with open(meta_path, "w") as f:
+        json.dump({"T": T, "window": subn, "gamma": gamma, "gamma_hat": gamma_hat}, f, indent=2)
+
+    print(f"[saved] {csv_path}")
+    
+def save_norms_csv(T, subn, gamma, g_norm, out_dir="LR_runs"):
+    os.makedirs(out_dir, exist_ok=True)
+    iters = np.arange(1, len(g_norm) + 1)
+    df = pd.DataFrame({"iteration": iters, "g_norm": np.asarray(g_norm, dtype=float)})
+    base = f"T{T}_W{subn}_g{sanitize(gamma)}"
+    path = os.path.join(out_dir, f"norms_{base}.csv")
+    df.to_csv(path, index=False)
+    print(f"[saved] {path}")
 
 
 if __name__ == "__main__":
 
     #======================================================================= Load Data =====
 
-    T = 168
+    T = 72
     #file_path  = "examples/unit_commitment/RTS_GMLC_zonal_noreserves.json"
     #data        = load_uc_data(file_path)
     data        = load_csv_data(T)
@@ -206,7 +236,7 @@ if __name__ == "__main__":
     
     #============================================================= Set Time Windows ===
     
-    subn         = 48                             # number of periods in subproblem
+    subn         = 12                             # number of periods in subproblem
     num_sh       = math.ceil(num_periods/subn)     # number of subproblems
     Time_windows = [list(range(i, min(i+subn, num_periods+1))) for i in range(1, num_periods+1, subn)]
     
@@ -360,6 +390,8 @@ if __name__ == "__main__":
         Level_vals.append(q)       
         
         runs.append({ 'gamma': gamma, 'gamma_hat': gamma_hat, 'Lag_set': Lag_set, 'Level_vals': Level_vals, 'Runtime': LR_runtime, 'g_norm': g_length })
+        save_run_csv(T, subn, gamma, gamma_hat, Lag_set, g_length, Level_vals)
+        save_norms_csv(T, subn, gamma, g_length)   # <— add this line
 
     print("\n############### Summary of runs #################")
     for r in runs:
@@ -370,63 +402,117 @@ if __name__ == "__main__":
     pool.close()
     pool.join()
     
-    import numpy as np
-    import matplotlib.pyplot as plt
-
-    colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
-
-    plt.figure()
-
+    
+    # ------ Dual Plots
+    plt.rcParams.update({"font.family": "Times New Roman"})
+    colors = list(plt.cm.tab20.colors) * 10  
+    fig, ax = plt.subplots(figsize=(3.5, 1.5))
     for i, r in enumerate(runs):
-        dual  = np.array(r['Lag_set'])
+        dual  = np.asarray(r["Lag_set"], dtype=float)
         lbest = np.maximum.accumulate(dual)
-        iters = np.arange(len(dual))
+        iters = np.arange(dual.size)
         c = colors[i % len(colors)]
 
-        plt.plot(iters, dual, color=c, alpha=0.20, linewidth=1.2, label="_nolegend_")
+        ax.plot(iters, dual, color=c, alpha=0.20, linewidth=0.8, label="_nolegend_")
+        ax.plot(iters, lbest, color=c, linewidth=1.2,
+                label=f"γ={r['gamma']}")
 
-        # visible running max with legend
-        plt.plot(iters, lbest, color=c, linewidth=2.4,label=f"γ={r['gamma']}, ĥγ={r['gamma_hat']}")
-
-    plt.xlabel('Iteration')
-    plt.ylabel('Value')
-    plt.title(f'Dual convergence across Polyak settings (T={T}, window={subn})')
-    plt.legend(ncol=1,fontsize=9, loc='lower right',   frameon=True,fancybox=True,framealpha=0.9,borderpad=0.6,handlelength=2.0 )
+    ax.set_xlabel("Iteration", fontsize=8)
+    ax.set_ylabel("Dual value", fontsize=8)
+    ax.tick_params(axis="both", which="major", labelsize=7)
+    #ax.legend(ncol=1, fontsize=7, loc="lower right",frameon=True, fancybox=True, framealpha=0.9,borderpad=0.6, handlelength=2.0)
+    ax.legend(ncol=1,fontsize=6, loc="lower right",frameon=True,fancybox=True,framealpha=0.7,      # lighter frame
+    borderpad=0.25, handlelength=1.2, handletextpad=0.3, labelspacing=0.2, borderaxespad=0.3 )
     plt.tight_layout()
-    plt.savefig(f'lr_convergence_overlay_T{T}_W{subn}.svg', bbox_inches='tight')
-    plt.show()
-    plt.figure()
-    
+    out_dir = "Plots"
+    os.makedirs(out_dir, exist_ok=True)
+    plt.savefig(os.path.join(out_dir, f"lr_convergence_overlay_T{T}_W{subn}_final.pdf"),
+                pad_inches=0.01, bbox_inches="tight", dpi=600)
+    plt.close(fig)
+
+    # ------- Norm Plots
+    plt.rcParams.update({"font.family": "Times New Roman"})
+    colors  = list(plt.cm.tab20.colors) * 10  # long cycle
+    fig, ax = plt.subplots(figsize=(3.5, 1.5))
 
     for i, r in enumerate(runs):
-        norms = np.asarray(r['g_norm'])
-        iters = np.arange(1, len(norms)+1)
+        norms = np.asarray(r["g_norm"], dtype=float)
+        iters = np.arange(1, norms.size + 1)
         c = colors[i % len(colors)]
-        plt.plot(iters, norms, color=c, linewidth=2.0,
-                label=f"γ={r['gamma']}, ĥγ={r['gamma_hat']}")
+        ax.plot(iters, norms, color=c, linewidth=1.2,
+                label=f"γ={r['gamma']}")
 
-    plt.xlabel('Iteration')
-    plt.ylabel(r'$\|g\|_2$')
-    plt.title(r'Subgradient norm over iterations: $\|g\|_2$')
+    ax.set_xlabel("Iteration", fontsize=8)
+    ax.set_ylabel(r"$\|g\|_2$", fontsize=8)
+    ax.tick_params(axis="both", which="major", labelsize=7)
 
-    plt.legend(
-        ncol=1,
-        fontsize=9,
-        loc='lower right',
-        frameon=True,
-        fancybox=True,
-        framealpha=0.9,
-        borderpad=0.6,
-        handlelength=2.0
-    )
-
+    # ax.legend(ncol=1, fontsize=7, loc="upper right",
+    #         frameon=True, fancybox=True, framealpha=0.9,
+    #         borderpad=0.6, handlelength=2.0)
+    
+    ax.legend(ncol=1,fontsize=6, loc="upper right",frameon=True,fancybox=True,framealpha=0.7,      # lighter frame
+    borderpad=0.25,      # tighter box padding
+    handlelength=1.2,    # shorter line samples
+    handletextpad=0.3,   # less gap line↔text
+    labelspacing=0.2,    # less vertical spacing between entries
+    borderaxespad=0.3    # closer to axes
+)
     plt.tight_layout()
-    plt.savefig(f'lr_norms_overlay_T{T}_W{subn}.svg', bbox_inches='tight')
-    plt.show()
 
+    out_dir = "Plots"
+    os.makedirs(out_dir, exist_ok=True)
+    plt.savefig(os.path.join(out_dir, f"lr_norms_overlay_T{T}_W{subn}_final.pdf"),
+                pad_inches=0.01, bbox_inches="tight", dpi=600)
+    plt.close(fig)
+
+    # colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    # plt.figure()
+
+    # for i, r in enumerate(runs):
+    #     dual  = np.array(r['Lag_set'])
+    #     lbest = np.maximum.accumulate(dual)
+    #     iters = np.arange(len(dual))
+    #     c = colors[i % len(colors)]
+    #     plt.plot(iters, dual, color=c, alpha=0.20, linewidth=1.2, label="_nolegend_")
+    #     # visible running max with legend
+    #     plt.plot(iters, lbest, color=c, linewidth=2.4,label=f"γ={r['gamma']}, ĥγ={r['gamma_hat']}")
+    # plt.xlabel('Iteration')
+    # plt.ylabel('Value')
+    # plt.title(f'Dual convergence across Polyak settings (T={T}, window={subn})')
+    # plt.legend(ncol=1,fontsize=9, loc='lower right',   frameon=True,fancybox=True,framealpha=0.9,borderpad=0.6,handlelength=2.0 )
+    # plt.tight_layout()
+    # plt.savefig(f'lr_convergence_overlay_T{T}_W{subn}.svg', bbox_inches='tight')
+    # plt.show()
+    # plt.figure()
     
+    #colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    #plt.figure()
     
-    
+    # for i, r in enumerate(runs):
+    #     norms = np.asarray(r['g_norm'])
+    #     iters = np.arange(1, len(norms)+1)
+    #     c = colors[i % len(colors)]
+    #     plt.plot(iters, norms, color=c, linewidth=2.0,
+    #             label=f"γ={r['gamma']}, ĥγ={r['gamma_hat']}")
+
+    # plt.xlabel('Iteration')
+    # plt.ylabel(r'$\|g\|_2$')
+    # plt.title(r'Subgradient norm over iterations: $\|g\|_2$')
+
+    # plt.legend(
+    #     ncol=1,
+    #     fontsize=9,
+    #     loc='lower right',
+    #     frameon=True,
+    #     fancybox=True,
+    #     framealpha=0.9,
+    #     borderpad=0.6,
+    #     handlelength=2.0
+    # )
+
+    # plt.tight_layout()
+    # plt.savefig(f'lr_norms_overlay_T{T}_W{subn}.svg', bbox_inches='tight')
+    # plt.show()
     
     # #Plot Results
     # import numpy as np

@@ -7,12 +7,12 @@ import pandas as pd
 import numpy as np
 import csv
 
-# L = 12             # Lookahead
-# F = 12             # Roll forward period
+L = 8             # Lookahead
+F = 8             # Roll forward period
 T = 72             # length of planning horizon
 prt_cry = False    # Print carryover constraints#
 opt_gap = 0.01     # Optimality gap for monolithic solve
-RH_opt_gap = 0.5  # Optimality gap for RH subproblems
+RH_opt_gap = 0.05  # Optimality gap for RH subproblems
 
 ################################### Load data #####################################
 #file_path  = "examples/unit_commitment/RTS_GMLC_zonal_noreserves.json"
@@ -149,7 +149,7 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=Non
 
     return rh_time, ofv, fixed_sol
 
-#commitment, ofv, sol_to_plot = run_RH(data, F = F, L = L, T = T, write_csv = True, opt_gap = opt_gap, verbose = True, benchmark=False)
+commitment, ofv, sol_to_plot = run_RH(data, F = F, L = L, T = T, write_csv = True, opt_gap = opt_gap, verbose = True, benchmark=False)
 
 def sweep_RH(data, T =T, F_vals = [12,24], L_vals = [8,12], seeds=(41, 86, 55), opt_gap = opt_gap, only_valid = False, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = False):
 
@@ -197,13 +197,13 @@ def sweep_RH(data, T =T, F_vals = [12,24], L_vals = [8,12], seeds=(41, 86, 55), 
     print(f"Wrote {len(df)} rows to {csv_path}")
     return df
 
-df = sweep_RH( data, T = T, F_vals = [12,24], L_vals = [12], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
-T = 168
-data =  load_csv_data(T)
-df2 = sweep_RH( data, T = T, F_vals = [12,24], L_vals = [12], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
-T = 336
-data =  load_csv_data(T)
-df3 = sweep_RH( data, T = T, F_vals = [12,24], L_vals = [12], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
+# df = sweep_RH( data, T = T, F_vals = [12,24], L_vals = [12], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
+# T = 168
+# data =  load_csv_data(T)
+# df2 = sweep_RH( data, T = T, F_vals = [12,24], L_vals = [12], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
+# T = 336
+# data =  load_csv_data(T)
+# df3 = sweep_RH( data, T = T, F_vals = [12,24], L_vals = [12], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
 
 ##############Plotting code##############
 

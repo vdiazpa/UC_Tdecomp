@@ -9,6 +9,10 @@ build time monolithic: 24.280196875333786
 Monolithic UC cost with opt gap 0.01 is: 5958196254.98
 Monolithic build + solve time: 1188.7
 
+gamma=0.2, gamma_hat=1, iters=30, runtime=894.76s, best_dual=5824244855.84
+gamma=0.4, gamma_hat=1, iters=30, runtime=607.80s, best_dual=5819496086.92
+gamma=0.6, gamma_hat=1, iters=30, runtime=603.59s, best_dual=5824806282.56
+
 T = 168,
 Total RH time: 110.818 secs
 fixing inputed variable values
@@ -27,7 +31,9 @@ build time monolithic: 5.0907129580155015
 Monolithic UC cost with opt gap 0.01 is: 1155799354.41
 Monolithic build + solve time: 102.79
 
-T	RH Cost	Mono Cost	Opt Gap
+
+
+T	RH Cost	Mono Cost	Opt Gap (from excel)
 336	5964866535	5958196255	0.111826133
 168	2822785550	2805888716	0.598587235
 72	1175106609	1155799354	1.643021546
