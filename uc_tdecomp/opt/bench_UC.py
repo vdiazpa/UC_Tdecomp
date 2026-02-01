@@ -1,15 +1,6 @@
-from uc_tdecomp.data_extract import load_uc_data, load_csv_data
-import numpy as np
 from pyomo.environ import *
 from time import perf_counter
 
-
-T = 24
-file_path  = "./RTS_GMLC_zonal_noreserves.json"
-#file_path = "examples/unit_commitment/tiny_rts_ready.json"
-
-data =  load_csv_data(T)
-#data = load_uc_data(file_path)
 
 def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_sol = False, F = False, L = False):
     
@@ -215,8 +206,6 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_s
         disch_cost = sum( 20.0 * m.DischargePower[b,t]                     for b in m.StorageUnits        for t in m.TimePeriods)
         shed_cost  = sum( 1000 * m.LoadShed[n,t]                           for n in data["load_buses"]    for t in m.TimePeriods)
 
-        #stop_cost  = sum(   m.ShutDownCost[g] * m.UnitStop[g,t]   for g in m.ThermalGenerators for t in m.TimePeriods)
-        #c = sum(m.PowerCostVar[g,t] for g in m.ThermalGenerators for t in m.TimePeriods)
         return   start_cost + on_cost + power_cost + shed_cost + renew_cost + disch_cost + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits) 
         
         
@@ -365,4 +354,3 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_s
     return return_object
 
         
-x = benchmark_UC_build(data, opt_gap=0.01, tee = True, save_sol = False)

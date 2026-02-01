@@ -1,6 +1,6 @@
 
-from uc_tdecomp.LR_subp_build import build_LR_subprobs
-from uc_tdecomp.data_extract import load_uc_data, load_csv_data
+from .LR_subp_build import build_LR_subprobs
+from ..data.data_extract import load_uc_data, load_csv_data
 from pyomo.environ import *
 from time import perf_counter
 from multiprocessing import Pool

@@ -532,32 +532,31 @@ def load_rts_data():
         }
 
 
-
-    return {
-        "SoC_init": SoC_init,
-        "gen_cost": gen_cost,
-        "bus_ren_dict": bus_ren_dict,
-        "bus_bat": bus_bat,
-        "bat_bus": bat_bus,
-        "sto_RoC": sto_RoC,
-        "sto_Ecap": sto_Ecap,
-        "sto_eff": sto_eff,
-        "periods": periods,
-        "gen_bus": gen_bus,
-        "ther_gens_by_bus": ther_gens_by_bus,
-        "ren_bus_t": ren_bus_t,
-        "init_status": s_init, 
-        "p_init": p_init,
-        "bTu": bus_to_unit, 
-        "startup_cost": start_cost,
-        "commit_cost" : commit_cost,
-        "rup": rup,
-        "rdn": rdn,
-        "suR": suR,
-        "sdR": sdR,
-        "type"  : typ,
-        "ren_output": ren_output,
-        "ren_gens": ren_gens,
-        "ther_gens": ther_gens
-    }
+    # return {
+    #     "SoC_init": SoC_init,
+    #     "gen_cost": gen_cost,
+    #     "bus_ren_dict": bus_ren_dict,
+    #     "bus_bat": bus_bat,
+    #     "bat_bus": bat_bus,
+    #     "sto_RoC": sto_RoC,
+    #     "sto_Ecap": sto_Ecap,
+    #     "sto_eff": sto_eff,
+    #     "periods": periods,
+    #     "gen_bus": gen_bus,
+    #     "ther_gens_by_bus": ther_gens_by_bus,
+    #     "ren_bus_t": ren_bus_t,
+    #     "init_status": s_init, 
+    #     "p_init": p_init,
+    #     "bTu": bus_to_unit, 
+    #     "startup_cost": start_cost,
+    #     "commit_cost" : commit_cost,
+    #     "rup": rup,
+    #     "rdn": rdn,
+    #     "suR": suR,
+    #     "sdR": sdR,
+    #     "type"  : typ,
+    #     "ren_output": ren_output,
+    #     "ren_gens": ren_gens,
+    #     "ther_gens": ther_gens
+    # }
 
