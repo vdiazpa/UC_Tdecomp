@@ -637,7 +637,7 @@ def load_rts_data(T):
     ref_bus = max(demand, key=demand.get)  # Reference bus has highest load
 
     #Create Generation Sets and Costs by Fuel Type
-    coal_gens, solar_gens, nuc_gens, oil_gens, steam_gens, wind_gens, other_gens, ng_gens, hydro_gens = [], [], [], [], [], [], [], [], []
+    coal_gens, solar_gens, nuc_gens, oil_gens, wind_gens, other_gens, ng_gens, hydro_gens = [], [], [], [], [], [], [], [],
     gen_cost = {}
 
     for i in range(len(gens)):
@@ -689,6 +689,16 @@ def load_rts_data(T):
                 gens_by_bus[b] = tuple(gbb)
 
     lines_by_bus = { b: tuple(l for l in lines if (l, b) in line_to_bus_dict) for b in all_nodes }     #bus: tuple(lines_adjacent)
+
+    gen_bus = {}
+    for g in gens:
+        if g in bus_to_unit.index:
+            for b in all_nodes:
+                if bus_to_unit.at[g,b] !=0:
+                    gen_bus[g] = b
+                    break
+
+    ther_gens_by_bus = {b: tuple( g for g in ther_gens if gen_bus[g] == b) for b in all_nodes}
 
     # Dictionary to map nodes to lines adjacent & count number of lines adjacent to node
     lines_adj = {}
@@ -742,6 +752,7 @@ def load_rts_data(T):
         'p_min': p_min,
         "min_UT": min_UT,
         "min_DT": min_DT,
+        "gen_cost": gen_cost,
         'ren_gens': ren_gens, 
         'ther_gens': ther_gens,
         "rup" : rup, 
@@ -749,7 +760,9 @@ def load_rts_data(T):
         "suR": suR, 
         "sdR": sdR, 
         'line_cap': line_capacity,
+        "ther_gens_by_bus": ther_gens_by_bus, 
         "init_status": init_status, 
+        "gen_bus": gen_bus, 
         "p_init": p_init, 
         'line_ep': line_endpoints,
         'line_reac': line_reactance,
