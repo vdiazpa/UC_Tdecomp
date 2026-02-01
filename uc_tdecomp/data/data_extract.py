@@ -597,20 +597,17 @@ def load_rts_data(T):
     TIME_COLS = {"Year","Month","Day","Period","Hour","Datetime","Timestamp"}
 
     def _build_nodal_demand_from_regional(T, start_row=0):
-        bus = pd.read_csv(r"C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\bus_data.csv", header=0)
-        load = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_wind.csv", skiprows=range(1, start_row+1), nrows=T)
+        bus  = pd.read_csv(r"C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\bus_data.csv", header=0)
+        load = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_regional_Load.csv", skiprows=range(1, start_row+1), nrows=T)
 
-        # --- required columns (let it crash if missing)
-        bus["Bus ID"] = bus["Bus ID"].astype(str)
-        bus["Area"]   = bus["Area"].astype(str)
+        bus["Bus ID"] = bus["Bus ID"].astype(int)
+        bus["Area"]   = bus["Area"].astype(int)
         bus["MW Load"]= bus["MW Load"].astype(float)
 
-        # --- regional columns are everything except time cols (should be "1","2","3")
         region_cols = [c for c in load.columns if c not in TIME_COLS]
-        region_cols = [str(c).strip() for c in region_cols]
-
-        # FAIL if regions don't match areas in bus file
-        areas = sorted(bus["Area"].unique().tolist())
+        region_cols = [int(str(c).strip()) for c in region_cols]
+        
+        areas = sorted(bus["Area"].unique().tolist()) # FAIL if regions don't match areas in bus file
         assert sorted(region_cols) == areas, (sorted(region_cols), areas)
 
         # --- compute base totals per area (fail if any area has zero base load)
