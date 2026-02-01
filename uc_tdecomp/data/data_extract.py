@@ -556,6 +556,7 @@ def load_rts_data(T):
     pv_data    = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_pv.csv")
     hydro_data = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_hydro.csv")
     wind_data  = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_wind.csv")
+    load_data  = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_wind.csv")
 
     # ----------- Gens
 
@@ -571,6 +572,8 @@ def load_rts_data(T):
     rdn    = {ther_gens[i]: gen_data["Ramp Rate MW/Min"][i] for i in range(len(ther_gens))}
     suR = rup
     sdR = rdn
+    init_status = {g: 0 for g in ther_gens}
+    p_init = {g: 0.0 for g in ther_gens}
 
     # ----------- Lines
     lines = [line_data["UID"][i] for i in range(len(line_data))]
@@ -588,10 +591,50 @@ def load_rts_data(T):
     for i in range(len(all_nodes)):
         if bus_data["Bus Type"][i] == "PV" and bus_data["MW Load"][i] != 0:
             nodes_load.append(bus_data["Bus ID"][i])
-            demand[bus_data["Bus ID"][i]] = bus_data["MW Load"][i]
         else:
-            demand[bus_data["Bus ID"][i]] = 0
             nodes_noload.append(bus_data["Bus ID"][i])
+
+    TIME_COLS = {"Year","Month","Day","Period","Hour","Datetime","Timestamp"}
+
+    def _build_nodal_demand_from_regional(T, start_row=0):
+        bus = pd.read_csv(r"C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\bus_data.csv", header=0)
+        load = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_wind.csv", skiprows=range(1, start_row+1), nrows=T)
+
+        # --- required columns (let it crash if missing)
+        bus["Bus ID"] = bus["Bus ID"].astype(str)
+        bus["Area"]   = bus["Area"].astype(str)
+        bus["MW Load"]= bus["MW Load"].astype(float)
+
+        # --- regional columns are everything except time cols (should be "1","2","3")
+        region_cols = [c for c in load.columns if c not in TIME_COLS]
+        region_cols = [str(c).strip() for c in region_cols]
+
+        # FAIL if regions don't match areas in bus file
+        areas = sorted(bus["Area"].unique().tolist())
+        assert sorted(region_cols) == areas, (sorted(region_cols), areas)
+
+        # --- compute base totals per area (fail if any area has zero base load)
+        area_totals = bus.groupby("Area")["MW Load"].sum().to_dict()
+        for a in areas:
+            assert area_totals[a] > 0.0, f"Area {a} has zero total MW Load in bus.csv"
+
+        # --- shares per bus
+        bus["share"] = bus.apply(lambda r: r["MW Load"] / area_totals[r["Area"]], axis=1)
+
+        demand = {}
+        for a in areas:
+            series = load[str(a)].astype(float).tolist()  # length T
+            buses_a = bus.loc[bus["Area"] == a, ["Bus ID", "share"]]
+
+            for _, row in buses_a.iterrows():
+                b = row["Bus ID"]
+                s = float(row["share"])
+                for t in range(1, T+1):
+                    demand[(b, t)] = s * series[t-1]
+
+        return demand
+
+    demand = _build_nodal_demand_from_regional(T)
 
     nodes_noload = list(set(all_nodes) - set(nodes_load))
     ref_bus = max(demand, key=demand.get)  # Reference bus has highest load
@@ -673,8 +716,6 @@ def load_rts_data(T):
 
     gen_data['num_conn'] = [ bus_nlines_adj[unit_to_bus_dict[gen]] for gen in gens ] # add column to gen dataframe with # of lines adjacent to gen bus
 
-    trans_nodes = set(all_nodes) - set(nodes_load) - set(gen_buses)
-
     bus_ren_dict = { b: [g for g in ren_gens if bus_to_unit.loc[g, b] != 0] for b in all_nodes if any(bus_to_unit.loc[g, b] != 0 for g in ren_gens)}
 
 
@@ -711,14 +752,14 @@ def load_rts_data(T):
         "suR": suR, 
         "sdR": sdR, 
         'line_cap': line_capacity,
+        "init_status": init_status, 
+        "p_init": p_init, 
         'line_ep': line_endpoints,
         'line_reac': line_reactance,
         'lTb': line_to_bus_dict,
-        'trans_nodes': list(trans_nodes),
         "bats": bats,
         "bat_bus": bat_bus,
         "bus_ren_dict": bus_ren_dict, 
-        "bat_bus": bat_bus,
         "sto_RoC": sto_RoC,
         "sto_Ecap": sto_Ecap,
         "sto_eff": sto_eff,
