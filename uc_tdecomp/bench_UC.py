@@ -4,7 +4,7 @@ from pyomo.environ import *
 from time import perf_counter
 
 
-T = 72
+T = 24
 file_path  = "./RTS_GMLC_zonal_noreserves.json"
 #file_path = "examples/unit_commitment/tiny_rts_ready.json"
 
@@ -201,9 +201,6 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_s
         for (b, t), val in fixed_commitment['IsDischarging'].items():
             m.IsDischarging[b, t].setlb(val)
             m.IsDischarging[b, t].setub(val)
-        # for (b, t), val in fixed_commitment['SoC'].items():
-        #     m.SoC[b, t].setlb(val)
-        #     m.SoC[b, t].setub(val)
             
  # ======================================= Objective Function ======================================= #
 
@@ -368,4 +365,4 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_s
     return return_object
 
         
-#x = benchmark_UC_build(data, opt_gap=0.01, tee = True, save_sol = False)
+x = benchmark_UC_build(data, opt_gap=0.01, tee = True, save_sol = False)

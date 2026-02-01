@@ -381,3 +381,183 @@ def load_csv_data(T):
         "ren_gens": ren_gens,
         "ther_gens": ther_gens
     }
+
+
+
+
+def load_rts_data():
+    
+    # Read data
+    gen_data  = pd.read_csv("C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\gen_data.csv", header=0)
+    bus_data  = pd.read_csv("C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\bus_data.csv", header=0)
+    line_data = pd.read_csv("C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\branch_data.csv", header=0)
+    sto_data = pd.read_csv("C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\storage.csv", header=0)
+
+    nodes_load = []
+    nodes_noload = []
+    demand = {}
+
+    # ----------- Gens
+    gens = gen_data["GEN UID"].to_list()
+    p_max  = {gens[i]: gen_data["PMax MW"][i] for i in range(len(gens))}
+    p_min  = {gens[i]: gen_data["PMin MW"][i] for i in range(len(gens))}
+    min_UT = {gens[i]: gen_data["Min Up Time Hr"][i] for i in range(len(gens))}
+    min_DT = {gens[i]: gen_data["Min Down Time Hr"][i] for i in range(len(gens))}
+
+    # ----------- Lines
+    lines = [line_data["UID"][i] for i in range(len(line_data))]
+    line_reactance = {lines[i]: line_data["X"][i] for i in range(len(lines))}
+    line_capacity  = {lines[i]: line_data["Cont Rating"][i] for i in range(len(lines))}
+    line_endpoints = {lines[i]: (line_data['From Bus'][i], line_data['To Bus'][i]) for i in range(len(lines))}
+
+    # ----------- Storage
+    bats = sto_data["GEN UID"].to_list()
+
+
+    # ----------- Buses/Loads
+    all_nodes = bus_data["Bus ID"].unique()
+
+    for i in range(len(all_nodes)):
+        if bus_data["Bus Type"][i] == "PV" and bus_data["MW Load"][i] != 0:
+            nodes_load.append(bus_data["Bus ID"][i])
+            demand[bus_data["Bus ID"][i]] = bus_data["MW Load"][i]
+        else:
+            demand[bus_data["Bus ID"][i]] = 0
+            nodes_noload.append(bus_data["Bus ID"][i])
+
+    nodes_noload = list(set(all_nodes) - set(nodes_load))
+    ref_bus = max(demand, key=demand.get)  # Reference bus has highest load
+
+    #Create Generation Sets and Costs by Fuel Type
+    coal_gens, solar_gens, nuc_gens, oil_gens, steam_gens, wind_gens, other_gens, ng_gens, hydro_gens = [], [], [], [], [], [], [], [], []
+    gen_cost = {}
+
+    for i in range(len(gens)):
+        if gen_data["Fuel"][i] == "Coal":
+            coal_gens.append(gen_data["GEN UID"][i])
+            gen_cost[gen_data["GEN UID"][i]] = gen_data["Fuel Price $/MMBTU"][i]
+        elif gen_data["Fuel"][i] == "NG":
+            ng_gens.append(gen_data["GEN UID"][i])
+            gen_cost[gen_data["GEN UID"][i]] = gen_data["Fuel Price $/MMBTU"][i]
+        elif gen_data["Fuel"][i] == "Solar":
+            solar_gens.append(gen_data["GEN UID"][i])
+            gen_cost[gen_data["GEN UID"][i]] = 0.1
+        elif gen_data["Fuel"][i] == "Oil":
+            oil_gens.append(gen_data["GEN UID"][i])
+            gen_cost[gen_data["GEN UID"][i]] = gen_data["Fuel Price $/MMBTU"][i]
+        elif gen_data["Fuel"][i] == "Hydro":
+            hydro_gens.append(gen_data["GEN UID"][i])
+            gen_cost[gen_data["GEN UID"][i]] = 0.1
+        elif gen_data["Fuel"][i] == "Nuclear":
+            nuc_gens.append(gen_data["GEN UID"][i])
+            gen_cost[gen_data["GEN UID"][i]] = gen_data["Fuel Price $/MMBTU"][i]
+        elif gen_data["Fuel"][i] == "Wind":
+            wind_gens.append(gen_data["GEN UID"][i])
+            gen_cost[gen_data["GEN UID"][i]] = 0.1
+        else:
+            other_gens.append(gen_data["GEN UID"][i])
+            gen_cost[gen_data["GEN UID"][i]] = gen_data["Fuel Price $/MMBTU"][i]
+
+    # Create line-to-bus (adjacency matrix) and bus-to-unit (adjacency matrix) Maps
+    line_to_bus = pd.DataFrame(0, index=lines, columns=all_nodes, dtype = int)
+    bus_to_unit = pd.DataFrame(0, index=gens, columns=all_nodes, dtype = int)
+
+    for lid, (i,j) in line_endpoints.items():
+        line_to_bus.loc[lid, i] = -1
+        line_to_bus.loc[lid, j] =  1
+
+    for i in range(len(gens)):
+        bus_to_unit.loc[(gen_data["GEN UID"][i], gen_data["Bus ID"][i])] = 1
+
+    line_to_bus_dict = {(lid, b): line_to_bus.loc[lid, b] for lid in lines for b in all_nodes if line_to_bus.loc[lid, b] != 0}
+
+    gens_by_bus = {}
+
+    for b in bus_to_unit.columns:
+        gbb = []
+        for g in bus_to_unit.index:
+            if bus_to_unit.loc[g,b] == 1:
+                gbb.append(g)
+            if len(gbb) !=0:
+                gens_by_bus[b] = tuple(gbb)
+
+    lines_by_bus = { b: tuple(l for l in lines if (l, b) in line_to_bus_dict) for b in all_nodes }     #bus: tuple(lines_adjacent)
+
+    # Dictionary to map nodes to lines adjacent & count number of lines adjacent to node
+    lines_adj = {}
+    bus_nlines_adj= {}
+    for col in line_to_bus.columns:
+        lines_adj[col] = []
+        bus_nlines_adj[col] = 0
+        for idx, line in enumerate(line_to_bus.index):
+            if line_to_bus.loc[line, col] != 0:
+                bus_nlines_adj[col] +=1
+                lines_adj[col].append(lines[idx])
+
+    # Dictionary to map units to buses
+    unit_to_bus_dict = {}  
+    gen_buses = []
+    for idx, unit in enumerate(bus_to_unit.index):  
+        for col in bus_to_unit.columns:  
+            if bus_to_unit.loc[unit, col] != 0:
+                unit_to_bus_dict[unit] = col  
+                if col not in gen_buses:
+                    gen_buses.append(col)
+
+    gen_data['num_conn'] = [ bus_nlines_adj[unit_to_bus_dict[gen]] for gen in gens ] # add column to gen dataframe with # of lines adjacent to gen bus
+
+    trans_nodes = set(all_nodes) - set(nodes_load) - set(gen_buses)
+
+    return {
+        'gens': gens,
+        'lines': lines,
+        'buses': list(all_nodes),
+        'load_buses': nodes_load,
+        'no_load_buses': nodes_noload,
+        'demand': demand,  
+        'p_max': p_max,
+        'p_min': p_min,
+        "min_UT": min_UT,
+        "min_DT": min_DT,
+        'line_cap': line_capacity,
+        'line_ep': line_endpoints,
+        'line_reac': line_reactance,
+        'lTb': line_to_bus_dict,
+        'trans_nodes': list(trans_nodes),
+        'gens_by_bus': gens_by_bus,
+        'lines_by_bus': lines_by_bus,
+        'unit_to_bus_dict': unit_to_bus_dict,
+        'lines_adj': lines_adj,
+        'ref_bus': ref_bus,
+        }
+
+
+
+    return {
+        "SoC_init": SoC_init,
+        "gen_cost": gen_cost,
+        "bus_ren_dict": bus_ren_dict,
+        "bus_bat": bus_bat,
+        "bat_bus": bat_bus,
+        "sto_RoC": sto_RoC,
+        "sto_Ecap": sto_Ecap,
+        "sto_eff": sto_eff,
+        "periods": periods,
+        "gen_bus": gen_bus,
+        "ther_gens_by_bus": ther_gens_by_bus,
+        "ren_bus_t": ren_bus_t,
+        "init_status": s_init, 
+        "p_init": p_init,
+        "bTu": bus_to_unit, 
+        "startup_cost": start_cost,
+        "commit_cost" : commit_cost,
+        "rup": rup,
+        "rdn": rdn,
+        "suR": suR,
+        "sdR": sdR,
+        "type"  : typ,
+        "ren_output": ren_output,
+        "ren_gens": ren_gens,
+        "ther_gens": ther_gens
+    }
+
