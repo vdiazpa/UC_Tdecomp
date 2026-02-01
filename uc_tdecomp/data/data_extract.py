@@ -2,8 +2,10 @@
 # data_io.py
 from uc_tdecomp.data_utils import _read_from_file
 import pandas as pd
+import math
 
 def load_json_data(json_path: str):
+
 
     md = _read_from_file(json_path, file_type="json")
     system     = md.get("system", {})
@@ -171,6 +173,73 @@ def load_json_data(json_path: str):
         "ren_gens": ren_gens,
         "ther_gens": ther_gens
     }
+
+
+def attach_battery_from_csv(data: dict, storage_csv_path: str,
+                            id_col="GEN UID", bus_col="Bus ID",
+                            p_col=None, e_col=None, eff_col=None):
+    buses = set(data["buses"])
+    sto = pd.read_csv(storage_csv_path)
+
+    # infer columns if not provided
+    if p_col is None:
+        p_col = next((c for c in ["Max Power MW","Pmax MW","Power MW","bat_RoC","RoC"] if c in sto.columns), None)
+    if e_col is None:
+        e_col = next((c for c in ["Max Energy MWh","Energy MWh","bat_cap","Emax"] if c in sto.columns), None)
+    if eff_col is None:
+        eff_col = next((c for c in ["Round Trip Efficiency","Efficiency","bat_eff","RTE"] if c in sto.columns), None)
+
+    bats = sto[id_col].astype(str).tolist()
+
+    # normalize bus ids if needed
+    def norm_bus(x):
+        s = str(x).strip()
+        if s in buses: return s
+        if f"n_{s}" in buses: return f"n_{s}"
+        if s.startswith("n_") and s[2:] in buses: return s[2:]
+        return s
+
+    bat_bus = {b: norm_bus(sto.loc[i, bus_col]) for i, b in enumerate(bats)}
+
+    sto_RoC  = {b: float(sto.loc[i, p_col]) if p_col else 0.0 for i, b in enumerate(bats)}
+    sto_Ecap = {b: float(sto.loc[i, e_col]) if e_col else 0.0 for i, b in enumerate(bats)}
+
+    if eff_col:
+        eff_tmp = {b: float(sto.loc[i, eff_col]) for i, b in enumerate(bats)}
+        # convert round-trip to one-way if it looks like round-trip in (0,1]
+        sto_eff = {}
+        for b in bats:
+            e = eff_tmp[b]
+            if 0 < e <= 1.0 and "round" in eff_col.lower():
+                sto_eff[b] = math.sqrt(e)
+            else:
+                sto_eff[b] = e
+    else:
+        sto_eff = {b: 0.90 for b in bats}
+
+    SoC_init = {b: 0.5 * sto_Ecap[b] for b in bats}
+
+    bus_bat = {}
+    for bus in data["buses"]:
+        bb = [bat for bat in bats if bat_bus.get(bat) == bus]
+        if bb:
+            bus_bat[bus] = bb
+
+    data.update({
+        "bats": bats,
+        "bat_bus": bat_bus,
+        "bus_bat": bus_bat,
+        "sto_RoC": sto_RoC,
+        "sto_Ecap": sto_Ecap,
+        "sto_eff": sto_eff,
+        "SoC_init": SoC_init,
+    })
+
+    # ensure storage units are not in generator set
+    if "gens" in data:
+        data["gens"] = tuple(g for g in data["gens"] if g not in set(bats))
+
+    return data
 
 
 def load_csv_data(T): 
@@ -381,9 +450,6 @@ def load_csv_data(T):
         "ren_gens": ren_gens,
         "ther_gens": ther_gens
     }
-
-
-
 
 def load_rts_data():
     
