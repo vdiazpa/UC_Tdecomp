@@ -110,6 +110,16 @@ def load_json_data(json_path: str):
 
     bus_ren_dict = {b: [ g for g in ren_gens if gen_bus[g]==b] for b in buses if any(gen_bus[g] == b for g in ren_gens)}
 
+    gen_cost = {}
+    for g, rec in ther_gens_dict.items():
+        vals = rec.get("p_cost", {}).get("values", []) # vals is like [(MW, cost), ...] total cost curve
+        if len(vals) >= 2:
+            mw0, c0 = float(vals[0][0]), float(vals[0][1])
+            mw1, c1 = float(vals[-1][0]), float(vals[-1][1])
+            gen_cost[g] = (c1 - c0) / (mw1 - mw0) if mw1 > mw0 else 0.0
+        else:
+            gen_cost[g] = 0.0
+
     # generator params
     p_max  = {g: elements["generator"][g]["p_max"] for g in ther_gens}
     p_min  = {g: elements["generator"][g]["p_min"] for g in ther_gens}
@@ -162,6 +172,7 @@ def load_json_data(json_path: str):
         "slp": slp,
         "intc": intc,
         "bus_ren_dict": bus_ren_dict,
+        "gen_cost": gen_cost, 
         # "n_segments": len(B)
         "startup_cost": start_cost,
         "commit_cost" : commit_cost,
@@ -241,6 +252,127 @@ def attach_battery_from_csv(data: dict, storage_csv_path: str,
         data["gens"] = tuple(g for g in data["gens"] if g not in set(bats))
 
     return data
+
+
+TIME_COLS = {"Year","Month","Day","Period","Hour","Datetime","Timestamp"}
+
+def read_ts_slice(path, start_row=0, T=None, drop_time_cols=True):
+    """
+    start_row: 0-based hour index into the file (0 = first data row)
+    T: number of rows (hours) to read
+    """
+    if T is None:
+        df = pd.read_csv(path)
+    else:
+        # skiprows counts from 0 including header; skip data rows 1..start_row
+        df = pd.read_csv(path, skiprows=range(1, start_row+1), nrows=T)
+
+    cols = list(df.columns)
+    if drop_time_cols:
+        cols = [c for c in cols if c not in TIME_COLS]
+    return df, cols
+
+def attach_timeseries_from_rts_csv(
+    data: dict,
+    *,
+    load_csv: str,
+    ren_csvs: dict,        # e.g. {"pv": "...pv.csv", "rtpv": "...rtpv.csv", "wind": "...wind.csv", "hydro": "...hydro.csv"}
+    start_row: int,
+    T: int,
+    strict: bool = True    # if True: error if a renewable gen has no column in any ren CSV
+):
+    # --- periods reset
+    data["periods"] = list(range(1, T+1))
+    if "system" in data and isinstance(data["system"], dict):
+        data["system"]["time_keys"] = [str(t) for t in data["periods"]]
+
+    # --- build bus lookup for matching load column names
+    buses = list(data["buses"])
+    bus_by_str = {str(b).strip(): b for b in buses}
+
+    # --- LOAD: build demand[(bus,t)] using load CSV columns
+    load_df, load_cols = read_ts_slice(load_csv, start_row=start_row, T=T, drop_time_cols=True)
+
+    demand = {}
+    load_buses_set = set()
+
+    for c in load_cols:
+        c_key = str(c).strip()
+        if c_key not in bus_by_str: # column doesn't map to any bus id in JSON -> ignore
+            continue
+        b = bus_by_str[c_key]
+        series = load_df[c].astype(float).tolist()
+        for t in range(1, T+1):
+            val = float(series[t-1])
+            if val != 0.0:
+                demand[(b, t)] = demand.get((b, t), 0.0) + val
+                load_buses_set.add(b)
+
+    data["demand"] = demand
+    data["load_buses"] = sorted(load_buses_set, key=lambda x: str(x))
+    data["no_load_buses"] = [b for b in buses if b not in load_buses_set]
+
+    # --- RENEWABLES: read ren CSVs, build a column->series map
+    col_to_series = {}
+    all_ren_cols = set()
+
+    for _, fp in ren_csvs.items():
+        df, cols = read_ts_slice(fp, start_row=start_row, T=T, drop_time_cols=True)
+        for c in cols:
+            ck = str(c).strip()
+            all_ren_cols.add(ck)
+            # if duplicates across files, keep the first one encountered (or override if you prefer)
+            if ck not in col_to_series:
+                col_to_series[ck] = df[c].astype(float).tolist()
+
+    # --- decide renewables: intersection of JSON gens with TS columns
+    gens = list(data["gens"]) if isinstance(data["gens"], (list, tuple)) else list(data["gens"])
+    gens_str = {str(g).strip(): g for g in gens}
+
+    ren_gens = []
+    missing = []
+    for g_str, g in gens_str.items():
+        if g_str in all_ren_cols:
+            ren_gens.append(g)
+        # else: not renewable per time-series files
+
+    ren_output = {}    # Build ren_output[(g,t)]
+    for g in ren_gens:
+        gs = str(g).strip()
+        series = col_to_series.get(gs)
+        if series is None:
+            missing.append(g)
+            continue
+        for t in range(1, T+1):
+            ren_output[(g, t)] = float(series[t-1])
+
+    if strict and missing:
+        raise ValueError(f"Renewable gens missing time-series columns: {missing[:20]} (showing up to 20)")
+
+    data["ren_gens"] = ren_gens
+    data["ren_output"] = ren_output
+
+    # --- re-classify thermals = everything else (excluding storage if present)
+    bats = set(data.get("bats", []))
+    data["ther_gens"] = [g for g in gens if g not in set(ren_gens) and g not in bats]
+
+    gen_bus = data["gen_bus"]   # --- bus->renewables mapping
+    bus_ren_dict = {}
+    for g in ren_gens:
+        b = gen_bus.get(g)
+        if b is None:
+            continue
+        bus_ren_dict.setdefault(b, []).append(g)
+    data["bus_ren_dict"] = bus_ren_dict
+
+    # --- optional aggregate renewable by bus/time (you compute it in some places)
+    data["ren_bus_t"] = {
+        (b, t): sum(ren_output.get((g, t), 0.0) for g in gs)
+        for b, gs in bus_ren_dict.items()
+        for t in data["periods"] }
+
+    return data
+
 
 def load_csv_data(T): 
     
