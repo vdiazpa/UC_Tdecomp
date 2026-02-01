@@ -2,7 +2,6 @@
 # data_io.py
 from uc_tdecomp.data_utils import _read_from_file
 import pandas as pd
-import math
 
 def load_json_data(json_path: str):
 
@@ -103,6 +102,7 @@ def load_json_data(json_path: str):
 
     # unit to bus mapping
     gen_bus     = {g: elements["generator"][g]["bus"] for g in gens}                 # dict with -> gen: bus
+    print(gen_bus)
     gens_by_bus = {b: tuple(g for g in gens if gen_bus[g] == b) for b in buses}      # dict with -> bus: gens in bus
 
     ther_gens_by_bus = {b: tuple( g for g in ther_gens if gen_bus[g] == b) for b in buses}
@@ -187,7 +187,6 @@ def load_json_data(json_path: str):
         "ther_gens": ther_gens
     }
 
-import pandas as pd
 
 def attach_battery_from_csv(data: dict, storage_csv_path: str):
 
@@ -201,10 +200,11 @@ def attach_battery_from_csv(data: dict, storage_csv_path: str):
     SoC_init = {b: 1000.0 * float(sto.loc[sto.index[i], "Initial Volume GWh"]) for i, b in enumerate(bats)} # initial SoC (MWh) from Initial Volume GWh
     sto_eff  = {b: 0.90 for b in bats} # fixed efficiency (since this file doesn't give battery eff)
 
+    gen_data = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\gen_data.csv")
+    uid_tobus = dict(zip(gen_data["GEN UID"].astype(str), gen_data["Bus ID"].astype(str)))
+
     # # bus -> [bat] map
-    bat_bus = {}
-    for b in bats:
-        bat_bus[b] = data["gen_bus"][b]
+    bat_bus = {b: uid_tobus[b] for b in bats}
 
     print(bat_bus)
 
@@ -549,10 +549,10 @@ def load_csv_data(T):
 def load_rts_data():
     
     # Read data
-    gen_data  = pd.read_csv("C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\gen_data.csv", header=0)
-    bus_data  = pd.read_csv("C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\bus_data.csv", header=0)
-    line_data = pd.read_csv("C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\branch_data.csv", header=0)
-    sto_data = pd.read_csv("C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\storage.csv", header=0)
+    gen_data  = pd.read_csv(r"C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\gen_data.csv", header=0)
+    bus_data  = pd.read_csv(r"C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\bus_data.csv", header=0)
+    line_data = pd.read_csv(r"C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\branch_data.csv", header=0)
+    sto = pd.read_csv(r"C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\storage.csv", header=0)
 
     nodes_load = []
     nodes_noload = []
@@ -570,10 +570,6 @@ def load_rts_data():
     line_reactance = {lines[i]: line_data["X"][i] for i in range(len(lines))}
     line_capacity  = {lines[i]: line_data["Cont Rating"][i] for i in range(len(lines))}
     line_endpoints = {lines[i]: (line_data['From Bus'][i], line_data['To Bus'][i]) for i in range(len(lines))}
-
-    # ----------- Storage
-    bats = sto_data["GEN UID"].to_list()
-
 
     # ----------- Buses/Loads
     all_nodes = bus_data["Bus ID"].unique()
@@ -669,6 +665,21 @@ def load_rts_data():
 
     trans_nodes = set(all_nodes) - set(nodes_load) - set(gen_buses)
 
+    # ----------- Storage
+    sto = sto[sto["GEN UID"].astype(str).str.contains("STORAGE")]   # keep only the electrical storage plant(s), and keep one row per UID
+    sto = sto[sto["position"] == "head"]
+    bats = sto["GEN UID"].astype(str).tolist()
+
+    sto_RoC  = {b: float(sto.loc[sto.index[i], "Rating MVA"]) for i, b in enumerate(bats)}
+    sto_Ecap = {b: 1000.0 * float(sto.loc[sto.index[i], "Max Volume GWh"]) for i, b in enumerate(bats)}   # energy (MWh) from Max Volume GWh
+    SoC_init = {b: 1000.0 * float(sto.loc[sto.index[i], "Initial Volume GWh"]) for i, b in enumerate(bats)} # initial SoC (MWh) from Initial Volume GWh
+    sto_eff  = {b: 0.90 for b in bats} # fixed efficiency (since this file doesn't give battery eff)
+
+    uid_tobus = dict(zip(gen_data["GEN UID"].astype(str), gen_data["Bus ID"].astype(str)))
+
+    # # bus -> [bat] map
+    bat_bus = {b: uid_tobus[b] for b in bats}
+
     return {
         'gens': gens,
         'lines': lines,
@@ -685,39 +696,17 @@ def load_rts_data():
         'line_reac': line_reactance,
         'lTb': line_to_bus_dict,
         'trans_nodes': list(trans_nodes),
+        "bats": bats,
+        "bat_bus": bat_bus,
+        "bat_bus": bat_bus,
+        "sto_RoC": sto_RoC,
+        "sto_Ecap": sto_Ecap,
+        "sto_eff": sto_eff,
+        "SoC_init": SoC_init,
         'gens_by_bus': gens_by_bus,
         'lines_by_bus': lines_by_bus,
         'unit_to_bus_dict': unit_to_bus_dict,
         'lines_adj': lines_adj,
         'ref_bus': ref_bus,
         }
-
-
-    # return {
-    #     "SoC_init": SoC_init,
-    #     "gen_cost": gen_cost,
-    #     "bus_ren_dict": bus_ren_dict,
-    #     "bus_bat": bus_bat,
-    #     "bat_bus": bat_bus,
-    #     "sto_RoC": sto_RoC,
-    #     "sto_Ecap": sto_Ecap,
-    #     "sto_eff": sto_eff,
-    #     "periods": periods,
-    #     "gen_bus": gen_bus,
-    #     "ther_gens_by_bus": ther_gens_by_bus,
-    #     "ren_bus_t": ren_bus_t,
-    #     "init_status": s_init, 
-    #     "p_init": p_init,
-    #     "bTu": bus_to_unit, 
-    #     "startup_cost": start_cost,
-    #     "commit_cost" : commit_cost,
-    #     "rup": rup,
-    #     "rdn": rdn,
-    #     "suR": suR,
-    #     "sdR": sdR,
-    #     "type"  : typ,
-    #     "ren_output": ren_output,
-    #     "ren_gens": ren_gens,
-    #     "ther_gens": ther_gens
-    # }
 

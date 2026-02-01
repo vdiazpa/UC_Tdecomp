@@ -4,7 +4,7 @@ from ..data.data_extract import load_csv_data, load_json_data, attach_battery_fr
 from ..opt.RH_main import run_RH
 
 dat = load_json_data(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_GMLC_zonal_noreserves.json")
-dat = attach_battery_from_csv(dat, r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\storage.csv")
+dat = attach_battery_from_csv(dat, r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\storage.csv", )
 
 # now override horizon + time series
 dat = attach_timeseries_from_rts_csv(
