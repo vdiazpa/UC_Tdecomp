@@ -552,28 +552,32 @@ def load_rts_data(T):
     bus_data  = pd.read_csv(r"C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\bus_data.csv", header=0)
     line_data = pd.read_csv(r"C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\branch_data.csv", header=0)
     sto = pd.read_csv(r"C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\storage.csv", header=0)
-    rtpv_data  = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_rtpv.csv")
-    pv_data    = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_pv.csv")
-    hydro_data = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_hydro.csv")
-    wind_data  = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_wind.csv")
-    load_data  = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_wind.csv")
+    rtpv_data  = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_rtpv.csv", header = 0)
+    pv_data    = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_pv.csv", header = 0)
+    hydro_data = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_hydro.csv", header = 0)
+    wind_data  = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_wind.csv", header = 0)
+    load_data  = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_regional_Load.csv", header = 0)
+    csp_data  = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_Natural_Inflow.csv", header = 0)
+
+    periods = list(range(1, T+1))
 
     # ----------- Gens
 
-    ren_gens = [gen_data["GEN UID"][i] for i in range(0,len(gen_data)) if gen_data["Fuel"][i] in ['Wind', 'Solar', 'Hydro']]
+    gens = gen_data["GEN UID"].to_list()
+    ren_gens  = [gen_data["GEN UID"][i] for i in range(0,len(gen_data)) if gen_data["Fuel"][i] in ['Wind', 'Solar', 'Hydro']]
     ther_gens = [g for g in gens if g not in ren_gens]
 
-    gens = gen_data["GEN UID"].to_list()
-    p_max  = {ther_gens[i]: gen_data["PMax MW"][i] for i in range(len(ther_gens))}
-    p_min  = {ther_gens[i]: gen_data["PMin MW"][i] for i in range(len(ther_gens))}
-    min_UT = {ther_gens[i]: gen_data["Min Up Time Hr"][i] for i in range(len(ther_gens))}
-    min_DT = {ther_gens[i]: gen_data["Min Down Time Hr"][i] for i in range(len(ther_gens))}
-    rup    = {ther_gens[i]: gen_data["Ramp Rate MW/Min"][i] for i in range(len(ther_gens))}
-    rdn    = {ther_gens[i]: gen_data["Ramp Rate MW/Min"][i] for i in range(len(ther_gens))}
+    gd = gen_data[gen_data["GEN UID"].isin(ther_gens)].set_index("GEN UID")
+    p_max  = gd["PMax MW"].to_dict()
+    p_min  = gd["PMin MW"].to_dict()
+    min_UT = gd["Min Up Time Hr"].to_dict()
+    min_DT = gd["Min Down Time Hr"].to_dict()
+    rup    = gd["Ramp Rate MW/Min"].to_dict()
+    rdn    = gd["Ramp Rate MW/Min"].to_dict()
+    init_status = {g: 0 for g in ther_gens}
+    p_init      = {g: 0.0 for g in ther_gens}
     suR = rup
     sdR = rdn
-    init_status = {g: 0 for g in ther_gens}
-    p_init = {g: 0.0 for g in ther_gens}
 
     # ----------- Lines
     lines = [line_data["UID"][i] for i in range(len(line_data))]
@@ -586,7 +590,7 @@ def load_rts_data(T):
     nodes_noload = []
     demand = {}
 
-    all_nodes = bus_data["Bus ID"].unique()
+    all_nodes = bus_data["Bus ID"].astype(int).unique().tolist()
 
     for i in range(len(all_nodes)):
         if bus_data["Bus Type"][i] == "PV" and bus_data["MW Load"][i] != 0:
@@ -634,7 +638,7 @@ def load_rts_data(T):
     demand = _build_nodal_demand_from_regional(T)
 
     nodes_noload = list(set(all_nodes) - set(nodes_load))
-    ref_bus = max(demand, key=demand.get)  # Reference bus has highest load
+    ref_bus,_ = max(demand, key=demand.get)  # Reference bus has highest load
 
     #Create Generation Sets and Costs by Fuel Type
     coal_gens, solar_gens, nuc_gens, oil_gens, wind_gens, other_gens, ng_gens, hydro_gens = [], [], [], [], [], [], [], [],
@@ -725,6 +729,21 @@ def load_rts_data(T):
 
     bus_ren_dict = { b: [g for g in ren_gens if bus_to_unit.loc[g, b] != 0] for b in all_nodes if any(bus_to_unit.loc[g, b] != 0 for g in ren_gens)}
 
+    def _strip_time(df):
+        cols = [c for c in df.columns if c not in TIME_COLS]
+        out = df.loc[:T-1, cols].copy()
+        out.columns = out.columns.astype(str)
+        return out
+
+    ren_df = pd.concat([_strip_time(pv_data),_strip_time(rtpv_data), _strip_time(wind_data), _strip_time(hydro_data), _strip_time(csp_data)] , axis=1)
+
+    # strict: crash if any ren gen has no column
+    for g in ren_gens:
+        assert g in ren_df.columns, f"Missing renewable TS column for {g}"
+
+    ren_output = {(g,t): float(ren_df.loc[t-1, g]) for g in ren_gens for t in periods}
+
+    ren_bus_t = { (b,t): sum(ren_output[(g,t)] for g in bus_ren_dict.get(b, []))for b in all_nodes for t in periods}
 
     # ----------- Storage
     sto = sto[sto["GEN UID"].astype(str).str.contains("STORAGE")]   # keep only the electrical storage plant(s), and keep one row per UID
@@ -736,10 +755,14 @@ def load_rts_data(T):
     SoC_init = {b: 1000.0 * float(sto.loc[sto.index[i], "Initial Volume GWh"]) for i, b in enumerate(bats)} # initial SoC (MWh) from Initial Volume GWh
     sto_eff  = {b: 0.90 for b in bats} # fixed efficiency (since this file doesn't give battery eff)
 
-    uid_tobus = dict(zip(gen_data["GEN UID"].astype(str), gen_data["Bus ID"].astype(str)))
-
-    # # bus -> [bat] map
+    # bus -> [bat] map
+    uid_tobus = dict(zip(gen_data["GEN UID"].astype(str), gen_data["Bus ID"].astype(int)))
     bat_bus = {b: uid_tobus[b] for b in bats}
+
+    bus_bat = {}
+    for b in bats: 
+        bus = bat_bus[b]
+        bus_bat.setdefault(bus, []).append(b)
 
     return {
         'gens': gens,
@@ -748,6 +771,7 @@ def load_rts_data(T):
         'load_buses': nodes_load,
         'no_load_buses': nodes_noload,
         'demand': demand,  
+        'periods': periods, 
         'p_max': p_max,
         'p_min': p_min,
         "min_UT": min_UT,
@@ -767,8 +791,11 @@ def load_rts_data(T):
         'line_ep': line_endpoints,
         'line_reac': line_reactance,
         'lTb': line_to_bus_dict,
+        "bTu": bus_to_unit,
+        "ren_bus_t": ren_bus_t, 
         "bats": bats,
         "bat_bus": bat_bus,
+        "bus_bat": bus_bat, 
         "bus_ren_dict": bus_ren_dict, 
         "sto_RoC": sto_RoC,
         "sto_Ecap": sto_Ecap,
