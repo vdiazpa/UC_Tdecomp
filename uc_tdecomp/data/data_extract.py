@@ -6,7 +6,6 @@ import math
 
 def load_json_data(json_path: str):
 
-
     md = _read_from_file(json_path, file_type="json")
     system     = md.get("system", {})
     elements   = md.get("elements", {})
@@ -109,6 +108,8 @@ def load_json_data(json_path: str):
     ther_gens_by_bus = {b: tuple( g for g in ther_gens if gen_bus[g] == b) for b in buses}
     ren_bus_t = { (b,t): sum(ren_output[(g,t)] for g in ren_gens if gen_bus[g]==b) for b in buses for t in periods}
 
+    bus_ren_dict = {b: [ g for g in ren_gens if gen_bus[g]==b] for b in buses if any(gen_bus[g] == b for g in ren_gens)}
+
     # generator params
     p_max  = {g: elements["generator"][g]["p_max"] for g in ther_gens}
     p_min  = {g: elements["generator"][g]["p_min"] for g in ther_gens}
@@ -160,6 +161,7 @@ def load_json_data(json_path: str):
         "bTu": bus_to_unit, 
         "slp": slp,
         "intc": intc,
+        "bus_ren_dict": bus_ren_dict,
         # "n_segments": len(B)
         "startup_cost": start_cost,
         "commit_cost" : commit_cost,
@@ -173,7 +175,6 @@ def load_json_data(json_path: str):
         "ren_gens": ren_gens,
         "ther_gens": ther_gens
     }
-
 
 def attach_battery_from_csv(data: dict, storage_csv_path: str,
                             id_col="GEN UID", bus_col="Bus ID",
@@ -240,7 +241,6 @@ def attach_battery_from_csv(data: dict, storage_csv_path: str,
         data["gens"] = tuple(g for g in data["gens"] if g not in set(bats))
 
     return data
-
 
 def load_csv_data(T): 
     
@@ -338,7 +338,7 @@ def load_csv_data(T):
     commit_cost = gen_th["no_load"].to_dict()
 
     all_gen_cost = {}
-    for index, row in gen_data.iterrows():
+    for _, row in gen_data.iterrows():
         if row["typ"] == 'coal':
             cost = row["heat_rate"] * 1.5 + row["var_om"]
         if row["typ"] == 'oil':
@@ -451,6 +451,7 @@ def load_csv_data(T):
         "ther_gens": ther_gens
     }
 
+#TO DO: finish loader
 def load_rts_data():
     
     # Read data
