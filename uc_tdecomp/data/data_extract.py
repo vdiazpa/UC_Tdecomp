@@ -545,25 +545,32 @@ def load_csv_data(T):
         "ther_gens": ther_gens
     }
 
-#TO DO: finish loader
-def load_rts_data():
+def load_rts_data(T):
     
     # Read data
     gen_data  = pd.read_csv(r"C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\gen_data.csv", header=0)
     bus_data  = pd.read_csv(r"C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\bus_data.csv", header=0)
     line_data = pd.read_csv(r"C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\branch_data.csv", header=0)
     sto = pd.read_csv(r"C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\storage.csv", header=0)
-
-    nodes_load = []
-    nodes_noload = []
-    demand = {}
+    rtpv_data  = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_rtpv.csv")
+    pv_data    = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_pv.csv")
+    hydro_data = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_hydro.csv")
+    wind_data  = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_wind.csv")
 
     # ----------- Gens
+
+    ren_gens = [gen_data["GEN UID"][i] for i in range(0,len(gen_data)) if gen_data["Fuel"][i] in ['Wind', 'Solar', 'Hydro']]
+    ther_gens = [g for g in gens if g not in ren_gens]
+
     gens = gen_data["GEN UID"].to_list()
-    p_max  = {gens[i]: gen_data["PMax MW"][i] for i in range(len(gens))}
-    p_min  = {gens[i]: gen_data["PMin MW"][i] for i in range(len(gens))}
-    min_UT = {gens[i]: gen_data["Min Up Time Hr"][i] for i in range(len(gens))}
-    min_DT = {gens[i]: gen_data["Min Down Time Hr"][i] for i in range(len(gens))}
+    p_max  = {ther_gens[i]: gen_data["PMax MW"][i] for i in range(len(ther_gens))}
+    p_min  = {ther_gens[i]: gen_data["PMin MW"][i] for i in range(len(ther_gens))}
+    min_UT = {ther_gens[i]: gen_data["Min Up Time Hr"][i] for i in range(len(ther_gens))}
+    min_DT = {ther_gens[i]: gen_data["Min Down Time Hr"][i] for i in range(len(ther_gens))}
+    rup    = {ther_gens[i]: gen_data["Ramp Rate MW/Min"][i] for i in range(len(ther_gens))}
+    rdn    = {ther_gens[i]: gen_data["Ramp Rate MW/Min"][i] for i in range(len(ther_gens))}
+    suR = rup
+    sdR = rdn
 
     # ----------- Lines
     lines = [line_data["UID"][i] for i in range(len(line_data))]
@@ -572,6 +579,10 @@ def load_rts_data():
     line_endpoints = {lines[i]: (line_data['From Bus'][i], line_data['To Bus'][i]) for i in range(len(lines))}
 
     # ----------- Buses/Loads
+    nodes_load = []
+    nodes_noload = []
+    demand = {}
+
     all_nodes = bus_data["Bus ID"].unique()
 
     for i in range(len(all_nodes)):
@@ -629,7 +640,6 @@ def load_rts_data():
     line_to_bus_dict = {(lid, b): line_to_bus.loc[lid, b] for lid in lines for b in all_nodes if line_to_bus.loc[lid, b] != 0}
 
     gens_by_bus = {}
-
     for b in bus_to_unit.columns:
         gbb = []
         for g in bus_to_unit.index:
@@ -665,6 +675,9 @@ def load_rts_data():
 
     trans_nodes = set(all_nodes) - set(nodes_load) - set(gen_buses)
 
+    bus_ren_dict = { b: [g for g in ren_gens if bus_to_unit.loc[g, b] != 0] for b in all_nodes if any(bus_to_unit.loc[g, b] != 0 for g in ren_gens)}
+
+
     # ----------- Storage
     sto = sto[sto["GEN UID"].astype(str).str.contains("STORAGE")]   # keep only the electrical storage plant(s), and keep one row per UID
     sto = sto[sto["position"] == "head"]
@@ -691,6 +704,12 @@ def load_rts_data():
         'p_min': p_min,
         "min_UT": min_UT,
         "min_DT": min_DT,
+        'ren_gens': ren_gens, 
+        'ther_gens': ther_gens,
+        "rup" : rup, 
+        "rdn": rdn, 
+        "suR": suR, 
+        "sdR": sdR, 
         'line_cap': line_capacity,
         'line_ep': line_endpoints,
         'line_reac': line_reactance,
@@ -698,6 +717,7 @@ def load_rts_data():
         'trans_nodes': list(trans_nodes),
         "bats": bats,
         "bat_bus": bat_bus,
+        "bus_ren_dict": bus_ren_dict, 
         "bat_bus": bat_bus,
         "sto_RoC": sto_RoC,
         "sto_Ecap": sto_Ecap,
