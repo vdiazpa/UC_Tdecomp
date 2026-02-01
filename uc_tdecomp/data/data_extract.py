@@ -3,7 +3,7 @@
 from uc_tdecomp.data_utils import _read_from_file
 import pandas as pd
 
-def load_uc_data(json_path: str):
+def load_json_data(json_path: str):
 
     md = _read_from_file(json_path, file_type="json")
     system     = md.get("system", {})
