@@ -41,7 +41,7 @@ def RH_windows_fixes(T, F, L):
     return windows, fixes
 
 
-def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=None, RH_opt_gap= 0.01):
+def run_RH(data, F, L, T, write_csv: str, opt_gap, verbose, benchmark=False, seed=None, RH_opt_gap= 0.01):
     # Will run the rolling horizon algorithm given T, L, and F. 
     if T is None: 
         T = max(data["periods"])
@@ -85,7 +85,8 @@ def run_RH(data, F, L, T, write_csv, opt_gap, verbose, benchmark=False, seed=Non
         all_g = sorted({g for (g, t) in fixed_sol["UnitOn"].keys()})
         all_b = sorted({b for (b, t) in fixed_sol['IsCharging'].keys()})
 
-        with open(f"RHcommits_F{F}_L{L}_T{T}.csv", "w", newline="") as f:
+        with open(write_csv, "w", newline="") as f:
+            print("Writing results to:", write_csv)
             writer = csv.writer(f)
             writer.writerow(["Variable", "Generator"] + all_t)
             for g in all_g:

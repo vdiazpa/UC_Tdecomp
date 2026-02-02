@@ -12,19 +12,15 @@ opt_gap = 0.01     # Optimality gap for monolithic solve
 RH_opt_gap = 0.05  # Optimality gap for RH subproblems
 
 # ################################### Load data #####################################
-# #file_path  = "examples/unit_commitment/RTS_GMLC_zonal_noreserves.json"
-# #file_path  = "examples/unit_commitment/tiny_RTS_ready.json"
-# #data = load_uc_data(file_path)
-# data =  load_csv_data(T)
 
 data = load_rts_data(T)
-
-#print(dat)
+#print(data)
 
 # ###################################################################################
 
-benchmark_UC_build(data, opt_gap = opt_gap, tee=True)
+#benchmark_UC_build(data, opt_gap = opt_gap, tee=True)
 
-commitment, ofv, sol_to_plot = run_RH(data, F = F, L = L, T = T, write_csv = True, opt_gap = opt_gap, verbose = True, benchmark=False)
+commitment, ofv, sol_to_plot = run_RH(data, F = F, L = L, T = T, 
+            write_csv = f"RH_sol_RTS_T{T}_F{F}_L{L}_gap{opt_gap}.csv", opt_gap = opt_gap, verbose = True, benchmark=False)
 
 

@@ -17,10 +17,10 @@ seeds = (41,86)
 
 datasets = ['RTS', 'DUK']
 
-for T in times:
-    data = load_rts_data(T)
-    df   = sweep_RH(data, T=T, F_vals=Fs, L_vals=Ls, seeds=seeds, opt_gap=RH_opt_gap, 
-                  only_valid=True, csv_path=f"rh_RTS_results_T{T}_gap{RH_opt_gap}_sto.csv", verbose=True)
+# for T in times:
+#     data = load_rts_data(T)
+#     df   = sweep_RH(data, T=T, F_vals=Fs, L_vals=Ls, seeds=seeds, opt_gap=RH_opt_gap, 
+#                   only_valid=True, csv_path=f"rh_RTS_results_T{T}_gap{RH_opt_gap}_sto.csv", verbose=True)
 for T in times:
     data = load_csv_data(T)
     df   = sweep_RH(data, T=T, F_vals=Fs, L_vals=Ls, seeds=seeds, opt_gap=RH_opt_gap, 
