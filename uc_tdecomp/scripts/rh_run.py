@@ -4,8 +4,8 @@ from ..data.data_extract import load_csv_data, load_rts_data
 from ..opt.RH_main import run_RH
 from ..opt.bench_UC import benchmark_UC_build
 
-L = 12             # Lookahead
-F = 72             # Roll forward period
+L = 2             # Lookahead
+F = 2            # Roll forward period
 T = 168             # length of planning horizon
 prt_cry = False    # Print carryover constraints#
 opt_gap = 0.01     # Optimality gap for monolithic solve

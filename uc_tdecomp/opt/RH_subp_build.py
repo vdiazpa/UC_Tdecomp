@@ -224,6 +224,9 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  warm_start = None, RH_opt_g
         
     m.Objective = Objective(rule=ofv, sense=minimize)
 
+    m.write(f"RH_supr.lp", io_options={"symbolic_solver_labels": True})
+
+
 # ======================================= Warm Start ======================================= #
 
     if warm_start: 
@@ -323,6 +326,9 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  warm_start = None, RH_opt_g
                                         # 'UnitOn': {(g,t): value(m.UnitOn[g,t])               for g in m.ThermalGenerators for t in range(t_roll+1, m.FinalTime+1)},
                                            'Flow': {(l,t): value(m.Flow[l,t])                 for l in m.TransmissionLines for t in range(t_roll+1, m.FinalTime+1)},
                                         'V_Angle': {(n,t): value(m.V_Angle[n,t])              for n in data['buses']       for t in range(t_roll+1, m.FinalTime+1)}}}
+    
+    print({(b,t): value(m.LoadShed[b,t])    for b in data["load_buses"]      for t in range(m.InitialTime, t_roll+1)}, )
+    
     return return_object
     
 

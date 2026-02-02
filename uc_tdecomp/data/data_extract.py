@@ -563,6 +563,7 @@ def load_rts_data(T):
 
     # ----------- Gens
 
+    gen_data = gen_data[~gen_data["Fuel"].astype(str).str.strip().isin(["Storage", "Sync_Cond"])]
     gens = gen_data["GEN UID"].to_list()
     ren_gens  = [gen_data["GEN UID"][i] for i in range(0,len(gen_data)) if gen_data["Fuel"][i] in ['Wind', 'Solar', 'Hydro']]
     ther_gens = [g for g in gens if g not in ren_gens]
@@ -635,6 +636,10 @@ def load_rts_data(T):
         return demand
 
     demand = _build_nodal_demand_from_regional(T)
+
+    # for key in demand: 
+    #     if demand[key] > 0.0: 
+    #         print(key, demand[key])
 
     nodes_noload = list(set(all_nodes) - set(nodes_load))
     ref_bus,_ = max(demand, key=demand.get)  # Reference bus has highest load
@@ -748,6 +753,8 @@ def load_rts_data(T):
     sto = sto[sto["GEN UID"].astype(str).str.contains("STORAGE")]   # keep only the electrical storage plant(s), and keep one row per UID
     sto = sto[sto["position"] == "head"]
     bats = sto["GEN UID"].astype(str).tolist()
+
+    print(bats)
 
     sto_RoC  = {b: float(sto.loc[sto.index[i], "Rating MVA"]) for i, b in enumerate(bats)}
     sto_Ecap = {b: 1000.0 * float(sto.loc[sto.index[i], "Max Volume GWh"]) for i, b in enumerate(bats)}   # energy (MWh) from Max Volume GWh
