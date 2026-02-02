@@ -1,7 +1,6 @@
 from pyomo.environ import *
 from time import perf_counter
 
-
 def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_sol = False, F = False, L = False):
     
     m   = ConcreteModel()
@@ -251,9 +250,9 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_s
         'IsCharging':     {(b,t): value(m.IsCharging[b,t])     for b in m.StorageUnits for t in range(m.InitialTime, m.FinalTime+1)},
         'IsDischarging':  {(b,t): value(m.IsDischarging[b,t])  for b in m.StorageUnits for t in range(m.InitialTime, m.FinalTime+1)}})
     
-    import os
-    import pandas as pd
-    import matplotlib.pyplot as plt
+    # import os
+    # import pandas as pd
+    # import matplotlib.pyplot as plt
 
     # --- Monolithic SoC plot ---
     # soc_mono = return_object['vars']['SoC']          

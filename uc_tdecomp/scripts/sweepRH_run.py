@@ -1,14 +1,30 @@
 #sweep.RH.py
 
-# df = sweep_RH( data, T = T, F_vals = [12,24], L_vals = [12], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
-# T = 168
-# data =  load_csv_data(T)
-# df2 = sweep_RH( data, T = T, F_vals = [12,24], L_vals = [12], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
-# T = 336
-# data =  load_csv_data(T)
-# df3 = sweep_RH( data, T = T, F_vals = [12,24], L_vals = [12], seeds=(41, 86, 55), opt_gap = 0.05, only_valid = True, csv_path = f"rh_duke_results_EXP_{T}HR_sto.csv", verbose = True)
+from ..data.data_extract import load_csv_data, load_rts_data
+from ..opt.RH_main import run_RH, sweep_RH
+from ..opt.bench_UC import benchmark_UC_build
 
+prt_cry = False    # Print carryover constraints#
+opt_gap = 0.01     # Optimality gap for monolithic solve
+RH_opt_gap = 0.05  # Optimality gap for RH subproblems
 
+# ################################### Load data #####################################
+
+times = [72,168,336]
+Fs    = [12, 24, 48, 72]
+Ls    = [0, 12, 24, 48, 72]
+seeds = (41,86)
+
+datasets = ['RTS', 'DUK']
+
+for T in times:
+    data = load_rts_data(T)
+    df   = sweep_RH(data, T=T, F_vals=Fs, L_vals=Ls, seeds=seeds, opt_gap=RH_opt_gap, 
+                  only_valid=True, csv_path=f"rh_RTS_results_T{T}_gap{RH_opt_gap}_sto.csv", verbose=True)
+for T in times:
+    data = load_csv_data(T)
+    df   = sweep_RH(data, T=T, F_vals=Fs, L_vals=Ls, seeds=seeds, opt_gap=RH_opt_gap, 
+                  only_valid=True, csv_path=f"rh_duk_results_T{T}_gap{RH_opt_gap}_sto.csv", verbose=True)
 
 
 ##############Plotting code##############
