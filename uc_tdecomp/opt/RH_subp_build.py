@@ -3,7 +3,7 @@ from pyomo.environ import *
 import numpy as np
 #from time import perf_counter
 
-def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, warm_start = None, RH_opt_gap=0.05):
+def build_RH_subprobs(data, s_e, init_state, fixed,  warm_start = None, RH_opt_gap=0.05):
     
     #t0 = perf_counter()
     m = ConcreteModel()
@@ -220,7 +220,7 @@ def build_RH_subprobs(data, s_e, init_state, fixed, print_carryover = False, war
         #stop_cost  = sum(   m.ShutDownCost[g] * m.UnitStop[g,t]   for g in m.ThermalGenerators for t in m.TimePeriods)
         #c = sum(m.PowerCostVar[g,t] for g in m.ThermalGenerators for t in m.TimePeriods)
         
-        return start_cost + on_cost + power_cost + shed_cost + renew_cost + disch_cost + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits) 
+        return start_cost + on_cost + power_cost + shed_cost + renew_cost + disch_cost + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits)
         
     m.Objective = Objective(rule=ofv, sense=minimize)
 

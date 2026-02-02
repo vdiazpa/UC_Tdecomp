@@ -548,10 +548,10 @@ def load_csv_data(T):
 def load_rts_data(T):
     
     # Read data
-    gen_data  = pd.read_csv(r"C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\gen_data.csv", header=0)
-    bus_data  = pd.read_csv(r"C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\bus_data.csv", header=0)
-    line_data = pd.read_csv(r"C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\branch_data.csv", header=0)
-    sto = pd.read_csv(r"C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\storage.csv", header=0)
+    gen_data  = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\gen_data.csv", header=0)
+    bus_data  = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\bus_data.csv", header=0)
+    line_data = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\branch_data.csv", header=0)
+    sto = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\storage.csv", header=0)
     rtpv_data  = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_rtpv.csv", header = 0)
     pv_data    = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_pv.csv", header = 0)
     hydro_data = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_hydro.csv", header = 0)
@@ -568,18 +568,17 @@ def load_rts_data(T):
     ther_gens = [g for g in gens if g not in ren_gens]
 
     gd = gen_data[gen_data["GEN UID"].isin(ther_gens)].set_index("GEN UID")
+    startup_cost = gd["Non Fuel Start Cost $"].to_dict()
     p_max  = gd["PMax MW"].to_dict()
     p_min  = gd["PMin MW"].to_dict()
     min_UT = gd["Min Up Time Hr"].to_dict()
     min_DT = gd["Min Down Time Hr"].to_dict()
     rup    = gd["Ramp Rate MW/Min"].to_dict()
     rdn    = gd["Ramp Rate MW/Min"].to_dict()
-    startup_cost = gd["Non Fuel Start Cost $"]
     init_status = {g: 0 for g in ther_gens}
     p_init      = {g: 0.0 for g in ther_gens}
     suR = rup
     sdR = rdn
-
 
     # ----------- Lines
     lines = [line_data["UID"][i] for i in range(len(line_data))]
@@ -601,7 +600,7 @@ def load_rts_data(T):
     TIME_COLS = {"Year","Month","Day","Period","Hour","Datetime","Timestamp"}
 
     def _build_nodal_demand_from_regional(T, start_row=0):
-        bus  = pd.read_csv(r"C:\\Users\\vdiazpa\\Documents\\quest_planning\\quest_planning\\seismic_model\\RTS_data\\bus_data.csv", header=0)
+        bus  = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\bus_data.csv", header=0)
         load = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_regional_Load.csv", skiprows=range(1, start_row+1), nrows=T)
 
         bus["Bus ID"] = bus["Bus ID"].astype(int)
@@ -647,28 +646,28 @@ def load_rts_data(T):
     for i in range(len(gens)):
         if gen_data["Fuel"][i] == "Coal":
             coal_gens.append(gen_data["GEN UID"][i])
-            gen_cost[gen_data["GEN UID"][i]] = gen_data["Fuel Price $/MMBTU"][i]
+            gen_cost[gen_data["GEN UID"][i]] = gen_data["Fuel Price $/MMBTU"][i] * (gen_data["HR_incr_3"][i] / 1000.0)
         elif gen_data["Fuel"][i] == "NG":
             ng_gens.append(gen_data["GEN UID"][i])
-            gen_cost[gen_data["GEN UID"][i]] = gen_data["Fuel Price $/MMBTU"][i]
+            gen_cost[gen_data["GEN UID"][i]] = gen_data["Fuel Price $/MMBTU"][i] * (gen_data["HR_incr_3"][i] / 1000.0)
         elif gen_data["Fuel"][i] == "Solar":
             solar_gens.append(gen_data["GEN UID"][i])
             gen_cost[gen_data["GEN UID"][i]] = 0.1
         elif gen_data["Fuel"][i] == "Oil":
             oil_gens.append(gen_data["GEN UID"][i])
-            gen_cost[gen_data["GEN UID"][i]] = gen_data["Fuel Price $/MMBTU"][i]
+            gen_cost[gen_data["GEN UID"][i]] = gen_data["Fuel Price $/MMBTU"][i] * (gen_data["HR_incr_3"][i]/ 1000.0)
         elif gen_data["Fuel"][i] == "Hydro":
             hydro_gens.append(gen_data["GEN UID"][i])
             gen_cost[gen_data["GEN UID"][i]] = 0.1
         elif gen_data["Fuel"][i] == "Nuclear":
             nuc_gens.append(gen_data["GEN UID"][i])
-            gen_cost[gen_data["GEN UID"][i]] = gen_data["Fuel Price $/MMBTU"][i]
+            gen_cost[gen_data["GEN UID"][i]] = gen_data["Fuel Price $/MMBTU"][i] * (gen_data["HR_incr_3"][i]/ 1000.0)
         elif gen_data["Fuel"][i] == "Wind":
             wind_gens.append(gen_data["GEN UID"][i])
             gen_cost[gen_data["GEN UID"][i]] = 0.1
         else:
             other_gens.append(gen_data["GEN UID"][i])
-            gen_cost[gen_data["GEN UID"][i]] = gen_data["Fuel Price $/MMBTU"][i]
+            gen_cost[gen_data["GEN UID"][i]] = gen_data["Fuel Price $/MMBTU"][i] * (gen_data["HR_incr_3"][i]/ 1000.0)
 
     # Create line-to-bus (adjacency matrix) and bus-to-unit (adjacency matrix) Maps
     line_to_bus = pd.DataFrame(0, index=lines, columns=all_nodes, dtype = int)
@@ -789,6 +788,7 @@ def load_rts_data(T):
         "init_status": init_status, 
         "gen_bus": gen_bus, 
         "p_init": p_init, 
+        "commit_cost": {g: 0.0 for g in ther_gens},
         'line_ep': line_endpoints,
         'line_reac': line_reactance,
         'lTb': line_to_bus_dict,

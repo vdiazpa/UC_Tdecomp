@@ -271,29 +271,29 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_s
     # fig = ax.get_figure()
     # plt.tight_layout()
     # plt.savefig(os.path.join(out_dir, f"RHSoC_T{T}_F{F}_L{L}.svg"), dpi=300)
-    # plt.close(fig)
+    # # plt.close(fig)
 
-    soc_mono = return_object['vars']['SoC']          
-    s = pd.Series(soc_mono)
-    s.index = pd.MultiIndex.from_tuples(s.index, names=['b','t'])
-    df_soc = s.reorder_levels(['t','b']).sort_index().unstack('b')
+    # soc_mono = return_object['vars']['SoC']          
+    # s = pd.Series(soc_mono)
+    # s.index = pd.MultiIndex.from_tuples(s.index, names=['b','t'])
+    # df_soc = s.reorder_levels(['t','b']).sort_index().unstack('b')
     
-    out_dir = "SoC Plots"
-    os.makedirs(out_dir, exist_ok=True)
+    # out_dir = "SoC Plots"
+    # os.makedirs(out_dir, exist_ok=True)
 
-    fig, ax = plt.subplots(figsize=(3.5, 1.5))
-    plt.rcParams.update({'font.family': 'Times New Roman'})
-    colors = plt.cm.tab20.colors * 10
-    for i, col in enumerate(df_soc.columns):
-        plt.plot(range(len(df_soc)), df_soc[col], linewidth=0.8, color=colors[i], label=f'ESS {i+1}')
-    ax.set_xlabel("Time (hr)", fontsize=8)
-    ax.tick_params(axis='both', which='major', labelsize=7)
-    ax.set_ylabel("ESS SoC(MWh)", fontsize=8)
-    ax.grid(False)
-    plt.tight_layout()
-    #plt.savefig(os.path.join(out_dir, f"MonoSoC_T{T}.pdf"), pad_inches = 0.01, bbox_inches = "tight", dpi=600)
-    plt.savefig(os.path.join(out_dir, f"RHSoC_T{T}_F{F}_L{L}.pdf"), pad_inches = 0.01, bbox_inches = "tight", dpi=600)
-    plt.close(fig)
+    # fig, ax = plt.subplots(figsize=(3.5, 1.5))
+    # plt.rcParams.update({'font.family': 'Times New Roman'})
+    # colors = plt.cm.tab20.colors * 10
+    # for i, col in enumerate(df_soc.columns):
+    #     plt.plot(range(len(df_soc)), df_soc[col], linewidth=0.8, color=colors[i], label=f'ESS {i+1}')
+    # ax.set_xlabel("Time (hr)", fontsize=8)
+    # ax.tick_params(axis='both', which='major', labelsize=7)
+    # ax.set_ylabel("ESS SoC(MWh)", fontsize=8)
+    # ax.grid(False)
+    # plt.tight_layout()
+    # #plt.savefig(os.path.join(out_dir, f"MonoSoC_T{T}.pdf"), pad_inches = 0.01, bbox_inches = "tight", dpi=600)
+    # plt.savefig(os.path.join(out_dir, f"RHSoC_T{T}_F{F}_L{L}.pdf"), pad_inches = 0.01, bbox_inches = "tight", dpi=600)
+    # plt.close(fig)
 
     if save_sol:
         import csv
