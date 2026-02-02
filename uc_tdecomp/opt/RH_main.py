@@ -1,4 +1,4 @@
-
+#RH_main.py
 from .RH_subp_build import build_RH_subprobs
 from .bench_UC import benchmark_UC_build
 from time import perf_counter
@@ -41,13 +41,13 @@ def RH_windows_fixes(T, F, L):
     return windows, fixes
 
 
-def run_RH(data, F, L, T, write_csv: str, opt_gap, verbose, benchmark=False, seed=None, RH_opt_gap= 0.01):
+def run_RH(data, F, L, T, write_csv: str,  RH_opt_gap, verbose, s_tee= False, benchmark=False, seed=None):
     # Will run the rolling horizon algorithm given T, L, and F. 
     if T is None: 
         T = max(data["periods"])
 
     windows, fixes = RH_windows_fixes(T, F, L)
-    fixed_sol   = {"UnitOn":{}, "UnitStart":{}, "UnitStop":{}, 'IsCharging':{}, 'IsDischarging':{}, 'SoC':{}, 'ChargePower':{}, 'DischargePower':{}}
+    fixed_sol   = {"UnitOn":{}, "UnitStart":{}, "UnitStop":{}, 'IsCharging':{}, 'IsDischarging':{} , 'SoC':{}, 'ChargePower':{}, 'DischargePower':{}}
     warm_start  = None
     init_states = {}
 
@@ -62,7 +62,7 @@ def run_RH(data, F, L, T, write_csv: str, opt_gap, verbose, benchmark=False, see
         if verbose:
             print(f"Window {i+1}/{len(windows)}: {window} | fix {fix_periods}")
 
-        result = build_RH_subprobs(data, window, init_states if i>0 else {}, fix_periods,  warm_start = warm_start, RH_opt_gap=RH_opt_gap)
+        result = build_RH_subprobs(data, window, init_states if i>0 else {}, fix_periods, s_tee=s_tee, warm_start = warm_start, RH_opt_gap=RH_opt_gap)
 
         warm_start  = result["warm_start"]
         init_states = result["InitialState"]
@@ -77,7 +77,7 @@ def run_RH(data, F, L, T, write_csv: str, opt_gap, verbose, benchmark=False, see
     if verbose:
         print(f"\nTotal RH time: {rh_time:.3f} secs")
 
-    eval_res = benchmark_UC_build(data, opt_gap, fixed_commitment = fixed_sol, F=F, L=L)
+    eval_res = benchmark_UC_build(data, opt_gap=RH_opt_gap, fixed_commitment = fixed_sol, F=F, L=L)
     ofv      = eval_res.get("ofv", None)
 
     if write_csv:           # Collect all time periods and generators
@@ -114,29 +114,29 @@ def run_RH(data, F, L, T, write_csv: str, opt_gap, verbose, benchmark=False, see
                 for t in all_t:
                     row.append(fixed_sol['IsDischarging'].get((b, t), ""))
                 writer.writerow(row)
-            for b in all_b:
-                row = ["ChargePower", b]
-                for t in all_t:
-                    row.append(fixed_sol['ChargePower'].get((b, t), ""))
-                writer.writerow(row)
-            for b in all_b:
-                row = ["DischargePower", b]
-                for t in all_t:
-                    row.append(fixed_sol['DischargePower'].get((b, t), ""))
-                writer.writerow(row)
-            for b in all_b:
-                row = ["SoC", b]
-                for t in all_t:
-                    row.append(fixed_sol['SoC'].get((b, t), ""))
-                writer.writerow(row)
+            # for b in all_b:
+            #     row = ["ChargePower", b]
+            #     for t in all_t:
+            #         row.append(fixed_sol['ChargePower'].get((b, t), ""))
+            #     writer.writerow(row)
+            # for b in all_b:
+            #     row = ["DischargePower", b]
+            #     for t in all_t:
+            #         row.append(fixed_sol['DischargePower'].get((b, t), ""))
+            #     writer.writerow(row)
+            # for b in all_b:
+            #     row = ["SoC", b]
+            #     for t in all_t:
+            #         row.append(fixed_sol['SoC'].get((b, t), ""))
+            #     writer.writerow(row)
                 
     if benchmark:
-        benchmark_UC_build(data, opt_gap)
+        benchmark_UC_build(data, RH_opt_gap)
 
-    return rh_time, ofv, fixed_sol
+    return rh_time, ofv,  fixed_sol 
 
 
-def sweep_RH(data, T =4, F_vals = [12,24], L_vals = [8,12], seeds=(41, 86, 55), opt_gap = 0.01, only_valid = False, csv_path = f"rh_duke_results_EXP_4HR_sto.csv", verbose = False):
+def sweep_RH(data, T =4, F_vals = [12,24], L_vals = [8,12], seeds=(41, 86, 55), RH_opt_gap = 0.01, only_valid = False, csv_path = f"rh_duke_results_EXP_4HR_sto.csv", verbose = False):
 
     records = []
     for F in F_vals:
@@ -148,7 +148,7 @@ def sweep_RH(data, T =4, F_vals = [12,24], L_vals = [8,12], seeds=(41, 86, 55), 
             for s in seeds:
                 try:
                     rh_time, ofv, _ = run_RH(
-                        data, F, L, T, opt_gap=opt_gap, write_csv=False, verbose=verbose and (s == seeds[0]))
+                        data, F, L, T, RH_opt_gap=RH_opt_gap, write_csv=False, verbose=verbose and (s == seeds[0]))
                     times.append(rh_time)
                     ofvs.append(ofv)
                 except Exception as e:

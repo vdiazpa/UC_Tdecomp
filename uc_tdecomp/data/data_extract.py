@@ -562,8 +562,8 @@ def load_rts_data(T):
     periods = list(range(1, T+1))
 
     # ----------- Gens
-
-    gen_data = gen_data[~gen_data["Fuel"].astype(str).str.strip().isin(["Storage", "Sync_Cond"])]
+    gen_data_full = gen_data.copy()
+    gen_data = gen_data[~gen_data["Fuel"].astype(str).str.strip().isin(["Storage", "Sync_Cond"])].reset_index(drop=True)
     gens = gen_data["GEN UID"].to_list()
     ren_gens  = [gen_data["GEN UID"][i] for i in range(0,len(gen_data)) if gen_data["Fuel"][i] in ['Wind', 'Solar', 'Hydro']]
     ther_gens = [g for g in gens if g not in ren_gens]
@@ -574,8 +574,9 @@ def load_rts_data(T):
     p_min  = gd["PMin MW"].to_dict()
     min_UT = gd["Min Up Time Hr"].to_dict()
     min_DT = gd["Min Down Time Hr"].to_dict()
-    rup    = gd["Ramp Rate MW/Min"].to_dict()
-    rdn    = gd["Ramp Rate MW/Min"].to_dict()
+    ramp_mw_per_hr = 60.0 * gd["Ramp Rate MW/Min"].astype(float)
+    rup    = ramp_mw_per_hr.to_dict()
+    rdn    = ramp_mw_per_hr.to_dict()
     init_status = {g: 0 for g in ther_gens}
     p_init      = {g: 0.0 for g in ther_gens}
     suR = rup
@@ -593,7 +594,6 @@ def load_rts_data(T):
     demand = {}
 
     all_nodes = bus_data["Bus ID"].astype(int).unique().tolist()
-
     nodes_load   = bus_data.loc[bus_data["MW Load"]  > 0, "Bus ID"].tolist()
     nodes_noload = bus_data.loc[bus_data["MW Load"] <= 0, "Bus ID"].tolist()
 
@@ -636,10 +636,6 @@ def load_rts_data(T):
         return demand
 
     demand = _build_nodal_demand_from_regional(T)
-
-    # for key in demand: 
-    #     if demand[key] > 0.0: 
-    #         print(key, demand[key])
 
     nodes_noload = list(set(all_nodes) - set(nodes_load))
     ref_bus,_ = max(demand, key=demand.get)  # Reference bus has highest load
@@ -754,15 +750,13 @@ def load_rts_data(T):
     sto = sto[sto["position"] == "head"]
     bats = sto["GEN UID"].astype(str).tolist()
 
-    print(bats)
-
     sto_RoC  = {b: float(sto.loc[sto.index[i], "Rating MVA"]) for i, b in enumerate(bats)}
     sto_Ecap = {b: 1000.0 * float(sto.loc[sto.index[i], "Max Volume GWh"]) for i, b in enumerate(bats)}   # energy (MWh) from Max Volume GWh
     SoC_init = {b: 1000.0 * float(sto.loc[sto.index[i], "Initial Volume GWh"]) for i, b in enumerate(bats)} # initial SoC (MWh) from Initial Volume GWh
     sto_eff  = {b: 0.90 for b in bats} # fixed efficiency (since this file doesn't give battery eff)
 
     # bus -> [bat] map
-    uid_tobus = dict(zip(gen_data["GEN UID"].astype(str), gen_data["Bus ID"].astype(int)))
+    uid_tobus = dict(zip(gen_data_full["GEN UID"].astype(str), gen_data_full["Bus ID"].astype(int)))
     bat_bus = {b: uid_tobus[b] for b in bats}
 
     bus_bat = {}

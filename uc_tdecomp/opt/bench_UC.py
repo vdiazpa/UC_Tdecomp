@@ -1,8 +1,25 @@
+#bench_UC.py
 from pyomo.environ import *
 from time import perf_counter
+import math
 
-def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_sol = False, F = False, L = False):
-    
+def benchmark_UC_build(data, save_sol_to:str = False, opt_gap=0.001, fixed_commitment=None, tee=False ):
+    """Build full horizon UC model & solve.
+
+    Parameters
+    ----------
+    data : dict
+        Dictionary with model objects (network & unit parameters, maps, etc.)
+    save_sol_to : str , optional
+        Name of file if wish to save solution. 
+    fixed_commitment : dict
+        Dictionary with (Bool) solution to fix var values to.
+
+    Returns
+    -------
+    dict
+        {'ofv': Float, 'vars': Dict with var values}
+    """
     m   = ConcreteModel()
     t0  = perf_counter()
     opt = SolverFactory('gurobi')
@@ -24,8 +41,10 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_s
     # ======================== Parameters 
 
     W_full                  = m.FinalTime - m.InitialTime + 1
-    m.MinUpTime          = Param(m.ThermalGenerators, initialize = data['min_UT'])
-    m.MinDownTime        = Param(m.ThermalGenerators, initialize = data['min_DT'])
+    # m.MinUpTime          = Param(m.ThermalGenerators, initialize = data['min_UT'])
+    # m.MinDownTime        = Param(m.ThermalGenerators, initialize = data['min_DT'])
+    m.MinUpTime        = Param(m.ThermalGenerators, initialize=lambda m,g: int(math.ceil(data['min_UT'][g])))
+    m.MinDownTime      = Param(m.ThermalGenerators, initialize=lambda m,g: int(math.ceil(data['min_DT'][g])))
     m.PowerGeneratedT0   = Param(m.ThermalGenerators, initialize = data['p_init'])   
     m.StatusAtT0         = Param(m.ThermalGenerators, initialize = data['init_status'] ) 
     m.UnitOnT0           = Param(m.ThermalGenerators, initialize = lambda m, g: 1.0 if m.StatusAtT0[g] > 0 else 0.0)
@@ -111,16 +130,16 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_s
                 m.RampUp_constraints.add(m.PowerGenerated[g,t] - m.PowerGeneratedT0[g]<= m.NominalRampUpLimit[g] * m.UnitOnT0[g] + m.StartupRampLimit[g] * m.UnitStart[g,t])
                 m.RampDown_constraints.add(m.PowerGeneratedT0[g] - m.PowerGenerated[g,t] <= m.NominalRampDownLimit[g] * m.UnitOn[g,t] + m.ShutdownRampLimit[g] * m.UnitStop[g,t]) #assumes power generated at 0 is 0
                 
-                m.UTRemain_constraints.add( m.UTRemain[g,t] >=  m.InitialTimePeriodsOnline[g] +m.MinUpTime[g]*m.UnitStart[g,t] - m.UnitOn[g,t])
-                m.DTRemain_constraints.add( m.DTRemain[g,t] >=  m.InitialTimePeriodsOffline[g] +m.MinDownTime[g]*m.UnitStop[g,t] - (1 -m.UnitOn[g,t]))
+                # m.UTRemain_constraints.add( m.UTRemain[g,t] >=  m.InitialTimePeriodsOnline[g] +m.MinUpTime[g]*m.UnitStart[g,t] - m.UnitOn[g,t])
+                # m.DTRemain_constraints.add( m.DTRemain[g,t] >=  m.InitialTimePeriodsOffline[g] +m.MinDownTime[g]*m.UnitStop[g,t] - (1 -m.UnitOn[g,t]))
 
             else: 
                 m.logical_constraints.add(m.UnitStart[g,t] - m.UnitStop[g,t] == m.UnitOn[g,t] - m.UnitOn[g,t-1])
                 m.RampUp_constraints.add(m.PowerGenerated[g,t] - m.PowerGenerated[g,t-1] <= m.NominalRampUpLimit[g] * m.UnitOn[g, t-1] + m.StartupRampLimit[g] * m.UnitStart[g,t])
                 m.RampDown_constraints.add(m.PowerGenerated[g,t-1] - m.PowerGenerated[g,t] <= m.NominalRampDownLimit[g] * m.UnitOn[g, t] + m.ShutdownRampLimit[g] * m.UnitStop[g,t])
                 
-                m.UTRemain_constraints.add( m.UTRemain[g,t] >=  m.UTRemain[g,t-1] +m.MinUpTime[g]*m.UnitStart[g,t] - m.UnitOn[g,t])
-                m.DTRemain_constraints.add( m.DTRemain[g,t] >=  m.DTRemain[g,t-1] +m.MinDownTime[g]*m.UnitStop[g,t] - (1 -m.UnitOn[g,t]))
+                # m.UTRemain_constraints.add( m.UTRemain[g,t] >=  m.UTRemain[g,t-1] +m.MinUpTime[g]*m.UnitStart[g,t] - m.UnitOn[g,t])
+                # m.DTRemain_constraints.add( m.DTRemain[g,t] >=  m.DTRemain[g,t-1] +m.MinDownTime[g]*m.UnitStop[g,t] - (1 -m.UnitOn[g,t]))
 
     for g in m.ThermalGenerators:
         
@@ -134,19 +153,19 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_s
             for t in range(m.InitialTime, m.InitialTime + fg):
                 m.UnitOn[g, t].fix(0)
 
-    # m.MinUpTime_constraints   = ConstraintList(doc = 'MinUpTime_constraints')
-    # m.MinDownTime_constraints = ConstraintList(doc = 'MinDownTime_constraints')
+    m.MinUpTime_constraints   = ConstraintList(doc = 'MinUpTime_constraints')
+    m.MinDownTime_constraints = ConstraintList(doc = 'MinDownTime_constraints')
     
-    # #Intra-window Uptime
-    #     for t in range(m.InitialTime + lg, m.FinalTime + 1):
-    #         kg = min(m.FinalTime - t + 1 , int(m.MinUpTime[g]))
-    #         m.MinUpTime_constraints.add( sum(m.UnitOn[g,t] for t in range(t, t+kg)) >= kg * m.UnitStart[g,t] )
+    #Intra-window Uptime
+    for t in range(m.InitialTime + lg, m.FinalTime + 1):
+        kg = min(m.FinalTime - t + 1 , int(m.MinUpTime[g]))
+        m.MinUpTime_constraints.add( sum(m.UnitOn[g,t] for t in range(t, t+kg)) >= kg * m.UnitStart[g,t] )
 
-    # # # Intra-window Downtime
-    #     for t in range(m.InitialTime + fg, m.FinalTime + 1):
-    #         hg = min(m.FinalTime - t + 1, int(m.MinDownTime[g]))
-    #         valid_tt = [tt for tt in range(t, t + hg) if tt in m.TimePeriods]
-    #         m.MinDownTime_constraints.add( sum(m.UnitOn[g,tt] for tt in valid_tt) <= (1 - m.UnitStop[g,t]) * hg )
+# # Intra-window Downtime
+    for t in range(m.InitialTime + fg, m.FinalTime + 1):
+        hg = min(m.FinalTime - t + 1, int(m.MinDownTime[g]))
+        valid_tt = [tt for tt in range(t, t + hg) if tt in m.TimePeriods]
+        m.MinDownTime_constraints.add( sum(m.UnitOn[g,tt] for tt in valid_tt) <= (1 - m.UnitStop[g,t]) * hg )
     
      # ======================================= Storage ======================================= #
      
@@ -250,57 +269,14 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_s
         'IsCharging':     {(b,t): value(m.IsCharging[b,t])     for b in m.StorageUnits for t in range(m.InitialTime, m.FinalTime+1)},
         'IsDischarging':  {(b,t): value(m.IsDischarging[b,t])  for b in m.StorageUnits for t in range(m.InitialTime, m.FinalTime+1)}})
     
-    # import os
-    # import pandas as pd
-    # import matplotlib.pyplot as plt
 
-    # --- Monolithic SoC plot ---
-    # soc_mono = return_object['vars']['SoC']          
-    # s = pd.Series(soc_mono)
-    # s.index = pd.MultiIndex.from_tuples(s.index, names=['b','t'])
-    # df_soc = s.reorder_levels(['t','b']).sort_index().unstack('b')
-    
-    # out_dir = "RH_plots_final"
-    # os.makedirs(out_dir, exist_ok=True)
-
-    # ax = df_soc.plot(figsize=(3.5, 1.5),linewidth=1.8,legend=False)
-    # ax.set_xlabel("Time (t)")
-    # ax.set_ylabel("SoC")
-    # ax.set_title(f"SoC by battery (T={T}, F={F}, L={L})")
-    # fig = ax.get_figure()
-    # plt.tight_layout()
-    # plt.savefig(os.path.join(out_dir, f"RHSoC_T{T}_F{F}_L{L}.svg"), dpi=300)
-    # # plt.close(fig)
-
-    # soc_mono = return_object['vars']['SoC']          
-    # s = pd.Series(soc_mono)
-    # s.index = pd.MultiIndex.from_tuples(s.index, names=['b','t'])
-    # df_soc = s.reorder_levels(['t','b']).sort_index().unstack('b')
-    
-    # out_dir = "SoC Plots"
-    # os.makedirs(out_dir, exist_ok=True)
-
-    # fig, ax = plt.subplots(figsize=(3.5, 1.5))
-    # plt.rcParams.update({'font.family': 'Times New Roman'})
-    # colors = plt.cm.tab20.colors * 10
-    # for i, col in enumerate(df_soc.columns):
-    #     plt.plot(range(len(df_soc)), df_soc[col], linewidth=0.8, color=colors[i], label=f'ESS {i+1}')
-    # ax.set_xlabel("Time (hr)", fontsize=8)
-    # ax.tick_params(axis='both', which='major', labelsize=7)
-    # ax.set_ylabel("ESS SoC(MWh)", fontsize=8)
-    # ax.grid(False)
-    # plt.tight_layout()
-    # #plt.savefig(os.path.join(out_dir, f"MonoSoC_T{T}.pdf"), pad_inches = 0.01, bbox_inches = "tight", dpi=600)
-    # plt.savefig(os.path.join(out_dir, f"RHSoC_T{T}_F{F}_L{L}.pdf"), pad_inches = 0.01, bbox_inches = "tight", dpi=600)
-    # plt.close(fig)
-
-    if save_sol:
+    if save_sol_to:
         import csv
         all_t = sorted({t for t in m.TimePeriods})
         all_g = sorted({g for g in m.ThermalGenerators})
         all_b = sorted({b for b in m.StorageUnits})
 
-        with open(f"Sol_bench{T}.csv", "w", newline="") as f:
+        with open(save_sol_to, "w", newline="") as f:
             writer = csv.writer(f)
 
             writer.writerow(["Variable", "Entity"] + all_t)
@@ -352,4 +328,215 @@ def benchmark_UC_build(data, opt_gap, fixed_commitment=None, tee = False, save_s
 
     return return_object
 
-        
+
+def plot_soc_from_return(return_object, out_dir='SoC Plots', prefix=None, T=None, F=None, L=None, *, save_svg=True, save_pdf=True, dpi=300, figsize=(3.5, 1.5), show=False):
+    """Plot state-of-charge (SoC) time series for all storage units.
+
+    Parameters
+    ----------
+    return_object : dict
+        Dictionary returned by this function containing `vars` -> `SoC` mapping {(b,t): value}.
+    out_dir : str or Path, optional
+        Directory to save plots (created if missing). Default 'SoC Plots'.
+    prefix : str, optional
+        Optional filename prefix.
+    T, F, L : any, optional
+        Identifiers used in filenames (kept generic since they may not be available here).
+    save_svg, save_pdf : bool
+        Whether to save SVG/PDF outputs.
+    dpi : int
+        DPI for saved figures.
+    figsize : tuple
+        Figure size in inches.
+    show : bool
+        If True, call `plt.show()` after plotting.
+
+    Returns
+    -------
+    dict
+        {'df_soc': DataFrame, 'files': [saved_file_paths]}
+    """
+    import os
+    from pathlib import Path
+    import pandas as pd
+    import matplotlib.pyplot as plt
+
+    soc = return_object.get('vars', {}).get('SoC')
+    if soc is None or len(soc) == 0:
+        raise ValueError('return_object does not contain any SoC data')
+
+    s = pd.Series(soc)
+    s.index = pd.MultiIndex.from_tuples(s.index, names=['b', 't'])
+    df_soc = s.reorder_levels(['t', 'b']).sort_index().unstack('b')
+
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    files = []
+
+    # simple pandas plot (SVG)
+    if save_svg:
+        ax = df_soc.plot(figsize=figsize, linewidth=1.8, legend=False)
+        ax.set_xlabel('Time (t)')
+        ax.set_ylabel('SoC')
+        title_parts = []
+        if T is not None:
+            title_parts.append(f'T={T}')
+        if F is not None:
+            title_parts.append(f'F={F}')
+        if L is not None:
+            title_parts.append(f'L={L}')
+        if title_parts:
+            ax.set_title('SoC by battery (' + ', '.join(title_parts) + ')')
+        fig = ax.get_figure()
+        filename = (prefix + '_' if prefix else '') + f"RHSoC_T{T}_F{F}_L{L}.svg"
+        path = out_dir / filename
+        plt.tight_layout()
+        fig.savefig(path, dpi=dpi)
+        plt.close(fig)
+        files.append(str(path))
+
+    # publication-style PDF plot
+    if save_pdf:
+        fig, ax = plt.subplots(figsize=figsize)
+        plt.rcParams.update({'font.family': 'Times New Roman'})
+        colors = plt.cm.tab20.colors * 10
+        for i, col in enumerate(df_soc.columns):
+            ax.plot(range(len(df_soc)), df_soc[col], linewidth=0.8, color=colors[i], label=f'ESS {i+1}')
+        ax.set_xlabel('Time (hr)', fontsize=8)
+        ax.tick_params(axis='both', which='major', labelsize=7)
+        ax.set_ylabel('ESS SoC(MWh)', fontsize=8)
+        ax.grid(False)
+        plt.tight_layout()
+        filename = (prefix + '_' if prefix else '') + f"RHSoC_T{T}_F{F}_L{L}.pdf"
+        path = out_dir / filename
+        fig.savefig(path, pad_inches=0.01, bbox_inches='tight', dpi=600)
+        plt.close(fig)
+        files.append(str(path))
+
+    if show:
+        import matplotlib.pyplot as _plt
+        _plt.show()
+
+    return {'df_soc': df_soc, 'files': files}
+
+# Example usage:
+# plot_soc_from_return(return_object, out_dir='RH_plots_final', prefix='RHSoC', T=T, F=F, L=L)
+
+def sweep_benchmark(data, T_vals=(24, 72, 168), opt_gaps=(0.001,), solver_name='gurobi', only_valid=False, csv_path=None, verbose=False):
+    """Sweep benchmark over multiple horizons (T) and optimality gaps.
+
+    This function creates time-sliced copies of `data` (keeping only the earliest
+    T periods) and runs `benchmark_UC_build` for each combination of T and opt-gap.
+    It records runtime, objective value, success status and any error message, and
+    saves the results to `csv_path` if provided.
+
+    Parameters
+    ----------
+    data : dict
+        Full data dictionary (contains 'periods' and time-indexed dicts like 'ren_output' and 'demand').
+    T_vals : iterable of int
+        List/tuple of horizons (number of periods) to evaluate.
+    opt_gaps : iterable of float
+        List/tuple of MIP gaps to test.
+    solver_name : str
+        Name of solver for metadata (not currently used to construct solver instance here).
+    only_valid : bool
+        If True, skip T > len(data['periods']).
+    csv_path : str or Path, optional
+        Path to write CSV summary. If None, a default name will be generated and written to CWD.
+    verbose : bool
+        Print progress and failures.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Summary dataframe with one row per (T, opt_gap) run.
+    """
+    import copy
+    import time
+    import datetime
+    from pathlib import Path
+    import numpy as np
+    import pandas as pd
+
+    original_periods = sorted(list(data.get('periods', [])))
+    if len(original_periods) == 0:
+        raise ValueError("`data` must contain a non-empty 'periods' sequence")
+
+    # normalize single-value opt_gaps
+    if isinstance(opt_gaps, (float, int)):
+        opt_gaps = (float(opt_gaps),)
+
+    records = []
+
+    for T in T_vals:
+        if T > len(original_periods):
+            if only_valid:
+                if verbose:
+                    print(f"Skipping T={T} (only {len(original_periods)} periods available)")
+                continue
+            else:
+                if verbose:
+                    print(f"Warning: requested T={T} exceeds available periods ({len(original_periods)}); truncating")
+                use_periods = original_periods
+        else:
+            use_periods = original_periods[:T]
+
+        # make a deepcopy and keep only time entries for periods in use_periods
+        data_sub = copy.deepcopy(data)
+        data_sub['periods'] = use_periods
+
+        # Filter time-indexed dicts: keep non-tuple-key dicts and tuple-key dicts where key[1] in use_periods
+        for k, v in list(data_sub.items()):
+            if isinstance(v, dict):
+                # detect if dict is time-indexed by checking for tuple-like keys
+                if any(isinstance(k2, tuple) and len(k2) >= 2 and k2[1] in original_periods for k2 in v.keys()):
+                    filtered = {k2: val for k2, val in v.items() if not (isinstance(k2, tuple) and len(k2) >= 2 and k2[1] not in use_periods)}
+                    data_sub[k] = filtered
+
+        for opt_gap in opt_gaps:
+            if verbose:
+                print(f"Running benchmark: T={T}, opt_gap={opt_gap}")
+
+            t0 = time.perf_counter()
+            try:
+                # Do not save UC solution by default
+                ret = benchmark_UC_build(data_sub, save_sol_to=None, opt_gap=opt_gap, fixed_commitment=None, tee=False)
+                runtime = time.perf_counter() - t0
+                ofv = ret.get('ofv', np.nan) if isinstance(ret, dict) else np.nan
+                success = True
+                error = None
+            except Exception as e:
+                runtime = time.perf_counter() - t0
+                ofv = np.nan
+                success = False
+                error = str(e)
+                if verbose:
+                    print(f"  failed (T={T}, opt_gap={opt_gap}): {e}")
+
+            rec = {
+                'run_id': f"T{T}_g{opt_gap}_{int(time.time()*1000) % 1000000}",
+                'T': T,
+                'opt_gap': opt_gap,
+                'solver': solver_name,
+                'runtime_sec': runtime,
+                'ofv': ofv,
+                'success': success,
+                'error': error,
+                'timestamp': datetime.datetime.now().isoformat()
+            }
+            records.append(rec)
+
+    df = pd.DataFrame.from_records(records)
+
+    if csv_path is None:
+        csv_path = Path(f"bench_sweep_T{min(T_vals)}-{max(T_vals)}_{int(time.time())}.csv")
+    else:
+        csv_path = Path(csv_path)
+
+    df.to_csv(csv_path, index=False)
+    if verbose:
+        print(f"Wrote {len(df)} rows to {csv_path}")
+
+    return df

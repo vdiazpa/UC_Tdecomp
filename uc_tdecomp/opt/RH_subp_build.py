@@ -1,9 +1,8 @@
-
+#RH_subp_build.py
 from pyomo.environ import *
-import numpy as np
-#from time import perf_counter
+import math
 
-def build_RH_subprobs(data, s_e, init_state, fixed,  warm_start = None, RH_opt_gap=0.05):
+def build_RH_subprobs(data, s_e, init_state, fixed,  s_tee=False, warm_start = None, RH_opt_gap=0.001):
     
     #t0 = perf_counter()
     m = ConcreteModel()
@@ -25,9 +24,18 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  warm_start = None, RH_opt_g
 
     # ======================== Parameters 
      
+    m.MinUpTime        = Param(m.ThermalGenerators, initialize=lambda m,g: int(math.ceil(data['min_UT'][g])))
+    m.MinDownTime      = Param(m.ThermalGenerators, initialize=lambda m,g: int(math.ceil(data['min_DT'][g])))
+    # fixed_T = [t for t in s_e if t <= t_fix1]
+    # m.FixedTime = Set(initialize=fixed_T, ordered=True)
+
+    # TO DO
+    # m.UTRemainT0 = Param(m.ThermalGenerators, initialize=lambda m,g: float(init_state['UTRemainT0'][g]))
+    # m.DTRemainT0 = Param(m.ThermalGenerators, initialize=lambda m,g: float(init_state['DTRemainT0'][g]))
+
     W = len(s_e)
-    m.MinUpTime        = Param(m.ThermalGenerators, initialize = data['min_UT'])
-    m.MinDownTime      = Param(m.ThermalGenerators, initialize = data['min_DT'])
+    # m.MinUpTime        = Param(m.ThermalGenerators, initialize = data['min_UT'])
+    # m.MinDownTime      = Param(m.ThermalGenerators, initialize = data['min_DT'])
     m.PowerGeneratedT0 = Param(m.ThermalGenerators, initialize = lambda m, g:(init_state.get('PowerGeneratedT0',{}).get(g,data['p_init'][g])) )   
     m.StatusAtT0       = Param(m.ThermalGenerators, initialize = lambda m, g:(init_state.get('StatusAtT0',      {}).get(g,data['init_status'][g])) ) 
     m.SoCAtT0          = Param(m.StorageUnits,      initialize = lambda m, b:(init_state.get('SoCT0',           {}).get(b,data['SoC_init'][b])) ) 
@@ -70,6 +78,8 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  warm_start = None, RH_opt_g
     m.DischargePower      = Var(m.StorageUnits,      m.TimePeriods, within = NonNegativeReals, bounds = lambda m, b, t: (0, m.Storage_RoC[b]) )
     m.IsCharging          = Var(m.StorageUnits,      m.TimePeriods, within = Binary)
     m.IsDischarging       = Var(m.StorageUnits,      m.TimePeriods, within = Binary)
+    # m.UTRemain            = Var(m.ThermalGenerators, m.TimePeriods, within=NonNegativeReals) 
+    # m.DTRemain            = Var(m.ThermalGenerators, m.TimePeriods, within=NonNegativeReals) 
     #m.PowerCostVar        = Var(m.ThermalGenerators, m.TimePeriods, within = NonNegativeReals) 
 
     # ======================================= Single-period constraints ======================================= #
@@ -87,7 +97,7 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  warm_start = None, RH_opt_g
         storage = 0.0 if b not in data['bus_bat'] else sum(m.DischargePower[bat,t] - m.ChargePower[bat,t] for bat in data['bus_bat'][b])
         return thermal + flows + renew + shed + storage == data["demand"].get((b,t), 0.0)
     
-    m.NodalBalance = Constraint(data["buses"], range(m.InitialTime, t_fix1+1) , rule = nb_rule) #
+    m.NodalBalance = Constraint(data["buses"],  range(m.InitialTime, t_fix1+1) , rule = nb_rule) #
     
     for t in m.TimePeriods:
         m.V_Angle[data["ref_bus"], t].fix(0.0)
@@ -148,6 +158,25 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  warm_start = None, RH_opt_g
         if m.InitialTimePeriodsOffline[g] > 0:
             for t in range(m.InitialTime, min(m.InitialTime + fg, t_fix1+1)):
                 m.UnitOn[g, t].fix(0)
+
+
+    m.UTRemain_constraints = ConstraintList()
+    m.DTRemain_constraints = ConstraintList()
+
+    for g in m.ThermalGenerators:
+        MUT = m.MinUpTimeP[g]
+        MDT = m.MinDownTimeP[g]
+
+        for t in m.FixedTime:
+            m.UTRemain_constraints.add(m.UTRemain[g,t] <= MUT * m.UnitOn[g,t])
+            m.DTRemain_constraints.add(m.DTRemain[g,t] <= MDT * (1 - m.UnitOn[g,t]))
+
+            if t == m.InitialTime:
+                m.UTRemain_constraints.add(m.UTRemain[g,t] >= m.UTRemainT0[g] + MUT * m.UnitStart[g,t] - m.UnitOn[g,t])
+                m.DTRemain_constraints.add(m.DTRemain[g,t] >= m.DTRemainT0[g] + MDT * m.UnitStop[g,t] - (1 - m.UnitOn[g,t]))
+            else:
+                m.UTRemain_constraints.add(m.UTRemain[g,t] >= m.UTRemain[g,t-1] + MUT * m.UnitStart[g,t] - m.UnitOn[g,t])
+                m.DTRemain_constraints.add(m.DTRemain[g,t] >= m.DTRemain[g,t-1] + MDT * m.UnitStop[g,t] - (1 - m.UnitOn[g,t]))
 
         # Intra-window Uptime — only up to the last fixed period
         for t in range(m.InitialTime + lg, min(m.InitialTime + W, t_fix1+1)):
@@ -214,13 +243,15 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  warm_start = None, RH_opt_g
         on_cost    = sum( m.CommitmentCost[g] * m.UnitOn[g,t]         for g in m.ThermalGenerators   for t in m.TimePeriods)
         renew_cost = sum( 0.01 * m.RenPowerGenerated[g,t]             for g in m.RenewableGenerators for t in m.TimePeriods)
         disch_cost = sum( 20.0 * m.DischargePower[b,t]                for b in m.StorageUnits        for t in m.TimePeriods)
+        ch_cost = sum( 20.0 * m.ChargePower[b,t]                for b in m.StorageUnits        for t in m.TimePeriods)
+
         power_cost = sum(data['gen_cost'][g] * m.PowerGenerated[g,t]  for g in m.ThermalGenerators   for t in m.TimePeriods)
         shed_cost  = sum( 1000 * m.LoadShed[n,t]                      for n in data["load_buses"]    for t in m.TimePeriods)
         
         #stop_cost  = sum(   m.ShutDownCost[g] * m.UnitStop[g,t]   for g in m.ThermalGenerators for t in m.TimePeriods)
         #c = sum(m.PowerCostVar[g,t] for g in m.ThermalGenerators for t in m.TimePeriods)
         
-        return start_cost + on_cost + power_cost + shed_cost + renew_cost + disch_cost + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits)
+        return  start_cost + on_cost + power_cost + shed_cost + renew_cost + disch_cost + ch_cost + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits)
         
     m.Objective = Objective(rule=ofv, sense=minimize)
 
@@ -230,15 +261,7 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  warm_start = None, RH_opt_g
 # ======================================= Warm Start ======================================= #
 
     if warm_start: 
-        # for (g,t), v in warm_start['UnitOn'].items():
-        #     m.UnitOn[g,t].value = int(round(v))
-            
-        # for (g,t), v in warm_start['UnitStart'].items():
-        #     m.UnitStart[g,t].set_value(int(round(v)))
 
-        # for (g,t), v in warm_start['UnitStop'].items():
-        #     m.UnitStop[g,t].set_value(int(round(v)))
-        
         for (g,t), v in warm_start['PowerGenerated'].items():
             m.PowerGenerated[g,t].set_value(float(v))
             
@@ -264,7 +287,7 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  warm_start = None, RH_opt_g
     # print("attach time:", attach_time)
 
     #t_solve = perf_counter()         # --------- start SOLVE timer
-    results = opt.solve(m, tee = False)
+    results=opt.solve(m, tee=s_tee)
     #solve_time = perf_counter() - t_solve
     #print("solve time:", solve_time)
 
@@ -327,8 +350,34 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  warm_start = None, RH_opt_g
                                            'Flow': {(l,t): value(m.Flow[l,t])                 for l in m.TransmissionLines for t in range(t_roll+1, m.FinalTime+1)},
                                         'V_Angle': {(n,t): value(m.V_Angle[n,t])              for n in data['buses']       for t in range(t_roll+1, m.FinalTime+1)}}}
     
-    print({(b,t): value(m.LoadShed[b,t])    for b in data["load_buses"]      for t in range(m.InitialTime, t_roll+1)}, )
-    
+
+    ls = {(b,t): value(m.LoadShed[b,t])    for b in data["load_buses"]      for t in range(m.InitialTime, t_roll+1)}    
+
+    def print_total_abs_flow(m):
+        for t in m.TimePeriods:
+            tot = 0.0
+            for l in m.TransmissionLines:
+                tot += abs(value(m.Flow[l, t]))
+            print(f"t={int(t):>3}  total_abs_flow={tot:12.2f}")
+
+    def print_thermal_generation(m):
+        for t in m.TimePeriods:
+            tot = 0.0
+            for g in m.ThermalGenerators:
+                tot += abs(value(m.PowerGenerated[g, t]))
+            print(f"t={int(t):>3}  totaltherm_gen={tot:12.2f}")
+
+    def print_renew_generation(m):
+        for t in m.TimePeriods:
+            tot = 0.0
+            for g in m.RenewableGenerators:
+                tot += abs(value(m.RenPowerGenerated[g, t]))
+            print(f"t={int(t):>3}  totalrenewable_gen={tot:12.2f}")
+
+    # print_total_abs_flow(m)
+    # print_thermal_generation(m)
+    # print_renew_generation(m)
+
     return return_object
     
 
