@@ -574,10 +574,12 @@ def load_rts_data(T):
     min_DT = gd["Min Down Time Hr"].to_dict()
     rup    = gd["Ramp Rate MW/Min"].to_dict()
     rdn    = gd["Ramp Rate MW/Min"].to_dict()
+    startup_cost = gd["Non Fuel Start Cost $"]
     init_status = {g: 0 for g in ther_gens}
     p_init      = {g: 0.0 for g in ther_gens}
     suR = rup
     sdR = rdn
+
 
     # ----------- Lines
     lines = [line_data["UID"][i] for i in range(len(line_data))]
@@ -592,11 +594,9 @@ def load_rts_data(T):
 
     all_nodes = bus_data["Bus ID"].astype(int).unique().tolist()
 
-    for i in range(len(all_nodes)):
-        if bus_data["Bus Type"][i] == "PV" and bus_data["MW Load"][i] != 0:
-            nodes_load.append(bus_data["Bus ID"][i])
-        else:
-            nodes_noload.append(bus_data["Bus ID"][i])
+    nodes_load   = bus_data.loc[bus_data["MW Load"]  > 0, "Bus ID"].tolist()
+    nodes_noload = bus_data.loc[bus_data["MW Load"] <= 0, "Bus ID"].tolist()
+
 
     TIME_COLS = {"Year","Month","Day","Period","Hour","Datetime","Timestamp"}
 
@@ -784,6 +784,7 @@ def load_rts_data(T):
         "suR": suR, 
         "sdR": sdR, 
         'line_cap': line_capacity,
+        "startup_cost": startup_cost,
         "ther_gens_by_bus": ther_gens_by_bus, 
         "init_status": init_status, 
         "gen_bus": gen_bus, 
@@ -793,6 +794,7 @@ def load_rts_data(T):
         'lTb': line_to_bus_dict,
         "bTu": bus_to_unit,
         "ren_bus_t": ren_bus_t, 
+        "ren_output": ren_output, 
         "bats": bats,
         "bat_bus": bat_bus,
         "bus_bat": bus_bat, 
