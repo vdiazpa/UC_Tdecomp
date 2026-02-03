@@ -97,7 +97,7 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  s_tee=False, warm_start = N
         storage = 0.0 if b not in data['bus_bat'] else sum(m.DischargePower[bat,t] - m.ChargePower[bat,t] for bat in data['bus_bat'][b])
         return thermal + flows + renew + shed + storage == data["demand"].get((b,t), 0.0)
     
-    m.NodalBalance = Constraint(data["buses"],  m.TimePeriods , rule = nb_rule) #
+    m.NodalBalance = Constraint(data["buses"],  range(m.InitialTime, t_fix1+1) , rule = nb_rule) #
     
     for t in m.TimePeriods:
         m.V_Angle[data["ref_bus"], t].fix(0.0)
@@ -279,7 +279,7 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  s_tee=False, warm_start = N
     #Solve 
     opt = SolverFactory('gurobi')
     opt.options['MIPGap']      = RH_opt_gap
-    opt.options['MIPFocus']   = 1
+    #opt.options['MIPFocus']   = 1
 
     # t_attach = perf_counter()       # --------- start ATTACH timer
     # opt.set_instance(m)
