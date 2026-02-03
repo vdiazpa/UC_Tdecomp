@@ -41,7 +41,7 @@ def RH_windows_fixes(T, F, L):
     return windows, fixes
 
 
-def run_RH(data, F, L, T, write_csv: str,  RH_opt_gap, verbose, s_tee= False, benchmark=False, seed=None):
+def run_RH(data, F, L, T, RH_opt_gap, verbose, write_csv: str = False,  s_tee= False, benchmark=False, seed=None):
     # Will run the rolling horizon algorithm given T, L, and F. 
     if T is None: 
         T = max(data["periods"])
@@ -77,7 +77,7 @@ def run_RH(data, F, L, T, write_csv: str,  RH_opt_gap, verbose, s_tee= False, be
     if verbose:
         print(f"\nTotal RH time: {rh_time:.3f} secs")
 
-    eval_res = benchmark_UC_build(data, opt_gap=RH_opt_gap, fixed_commitment = fixed_sol, F=F, L=L)
+    eval_res = benchmark_UC_build(data, opt_gap=0.01, fixed_commitment = fixed_sol)
     ofv      = eval_res.get("ofv", None)
 
     if write_csv:           # Collect all time periods and generators

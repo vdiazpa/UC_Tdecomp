@@ -2,7 +2,7 @@
 from pyomo.environ import *
 import math
 
-def build_RH_subprobs(data, s_e, init_state, fixed,  s_tee=False, warm_start = None, RH_opt_gap=0.001):
+def build_RH_subprobs(data, s_e, init_state, fixed,  s_tee=False, warm_start = None, RH_opt_gap=0.01):
     
     #t0 = perf_counter()
     m = ConcreteModel()
@@ -97,7 +97,7 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  s_tee=False, warm_start = N
         storage = 0.0 if b not in data['bus_bat'] else sum(m.DischargePower[bat,t] - m.ChargePower[bat,t] for bat in data['bus_bat'][b])
         return thermal + flows + renew + shed + storage == data["demand"].get((b,t), 0.0)
     
-    m.NodalBalance = Constraint(data["buses"],  range(m.InitialTime, t_fix1+1) , rule = nb_rule) #
+    m.NodalBalance = Constraint(data["buses"],  m.TimePeriods , rule = nb_rule) #
     
     for t in m.TimePeriods:
         m.V_Angle[data["ref_bus"], t].fix(0.0)
@@ -160,23 +160,23 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  s_tee=False, warm_start = N
                 m.UnitOn[g, t].fix(0)
 
 
-    m.UTRemain_constraints = ConstraintList()
-    m.DTRemain_constraints = ConstraintList()
+    # m.UTRemain_constraints = ConstraintList()
+    # m.DTRemain_constraints = ConstraintList()
 
-    for g in m.ThermalGenerators:
-        MUT = m.MinUpTimeP[g]
-        MDT = m.MinDownTimeP[g]
+    # for g in m.ThermalGenerators:
+    #     MUT = m.MinUpTimeP[g]
+    #     MDT = m.MinDownTimeP[g]
 
-        for t in m.FixedTime:
-            m.UTRemain_constraints.add(m.UTRemain[g,t] <= MUT * m.UnitOn[g,t])
-            m.DTRemain_constraints.add(m.DTRemain[g,t] <= MDT * (1 - m.UnitOn[g,t]))
+    #     for t in m.FixedTime:
+    #         m.UTRemain_constraints.add(m.UTRemain[g,t] <= MUT * m.UnitOn[g,t])
+    #         m.DTRemain_constraints.add(m.DTRemain[g,t] <= MDT * (1 - m.UnitOn[g,t]))
 
-            if t == m.InitialTime:
-                m.UTRemain_constraints.add(m.UTRemain[g,t] >= m.UTRemainT0[g] + MUT * m.UnitStart[g,t] - m.UnitOn[g,t])
-                m.DTRemain_constraints.add(m.DTRemain[g,t] >= m.DTRemainT0[g] + MDT * m.UnitStop[g,t] - (1 - m.UnitOn[g,t]))
-            else:
-                m.UTRemain_constraints.add(m.UTRemain[g,t] >= m.UTRemain[g,t-1] + MUT * m.UnitStart[g,t] - m.UnitOn[g,t])
-                m.DTRemain_constraints.add(m.DTRemain[g,t] >= m.DTRemain[g,t-1] + MDT * m.UnitStop[g,t] - (1 - m.UnitOn[g,t]))
+    #         if t == m.InitialTime:
+    #             m.UTRemain_constraints.add(m.UTRemain[g,t] >= m.UTRemainT0[g] + MUT * m.UnitStart[g,t] - m.UnitOn[g,t])
+    #             m.DTRemain_constraints.add(m.DTRemain[g,t] >= m.DTRemainT0[g] + MDT * m.UnitStop[g,t] - (1 - m.UnitOn[g,t]))
+    #         else:
+    #             m.UTRemain_constraints.add(m.UTRemain[g,t] >= m.UTRemain[g,t-1] + MUT * m.UnitStart[g,t] - m.UnitOn[g,t])
+    #             m.DTRemain_constraints.add(m.DTRemain[g,t] >= m.DTRemain[g,t-1] + MDT * m.UnitStop[g,t] - (1 - m.UnitOn[g,t]))
 
         # Intra-window Uptime — only up to the last fixed period
         for t in range(m.InitialTime + lg, min(m.InitialTime + W, t_fix1+1)):
@@ -255,7 +255,7 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  s_tee=False, warm_start = N
         
     m.Objective = Objective(rule=ofv, sense=minimize)
 
-    m.write(f"RH_supr.lp", io_options={"symbolic_solver_labels": True})
+    #m.write(f"RH_supr.lp", io_options={"symbolic_solver_labels": True})
 
 
 # ======================================= Warm Start ======================================= #
@@ -279,7 +279,7 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  s_tee=False, warm_start = N
     #Solve 
     opt = SolverFactory('gurobi')
     opt.options['MIPGap']      = RH_opt_gap
-    #opt.options['MIPFocus']   = 2
+    opt.options['MIPFocus']   = 1
 
     # t_attach = perf_counter()       # --------- start ATTACH timer
     # opt.set_instance(m)

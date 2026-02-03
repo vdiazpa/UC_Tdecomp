@@ -8,15 +8,16 @@ RH_opt_gap = 0.001  # Optimality gap for RH subproblems
 prt_cry = False    # Print carryover constraints#
 opt_gap = 0.001     # Optimality gap for monolithic solve
 L = 12             # Lookahead
-F = 0            # Roll forward period
-T = 72             # length of planning horizon
+F = 14            # Roll forward period
+T = 168             # length of planning horizon
 
 # ################################### Load data #####################################
 
 data = load_rts_data(T)
 #print(data)
-
+#data = load_csv_data(T)
 # ###################################################################################
+
 def print_system_totals(data, T=None):
     periods = data["periods"]
     if T is not None:
@@ -36,6 +37,7 @@ def print_system_totals(data, T=None):
 commitment, ofv, sol_to_plot = run_RH(
     data, F=F, L=L, T=T, 
     #s_tee = True,
-    write_csv = f"RH_sol_RTS_T{T}_F{F}_L{L}_gap{opt_gap}.csv", RH_opt_gap=RH_opt_gap, verbose=True, benchmark=False)
+    #write_csv = f"RH_sol_RTS_T{T}_F{F}_L{L}_gap{opt_gap}.csv", 
+    RH_opt_gap=RH_opt_gap, verbose=True, benchmark=False)
 
 benchmark_UC_build(data, opt_gap = opt_gap, tee=True)

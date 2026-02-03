@@ -6,21 +6,21 @@ from ..opt.bench_UC import benchmark_UC_build, sweep_benchmark
 
 prt_cry = False    # Print carryover constraints#
 opt_gap = 0.01     # Optimality gap for monolithic solve
-RH_opt_gap = 0.005  # Optimality gap for RH subproblems
+RH_opt_gap = 0.05  # Optimality gap for RH subproblems
 
 # ################################### Load data #####################################
 
 times = [72,168,336]
-Fs    = [12,24,48,72]
-Ls    = [0,12,24,48,72]
+Fs    = [12,24]
+Ls    = [12,24]
 seeds = (41,86)
 
 datasets = ['RTS', 'DUK']
 
-# for T in times:
-#     data = load_rts_data(T)
-#     df   = sweep_RH(data, T=T, F_vals=Fs, L_vals=Ls, seeds=seeds, RH_opt_gap=RH_opt_gap, 
-#                   only_valid=True, csv_path=f"rh_RTS_results_T{T}_gap{RH_opt_gap}_sto.csv", verbose=True)
+for T in times:
+    data = load_rts_data(T)
+    df   = sweep_RH(data, T=T, F_vals=Fs, L_vals=Ls, seeds=seeds, RH_opt_gap=RH_opt_gap, 
+                  only_valid=True, csv_path=f"rh_RTS_results_T{T}_gap{RH_opt_gap}_F_{Fs}_L{Ls}sto.csv", verbose=True)
 # for T in times:
 #     data = load_csv_data(T)
 #     df   = sweep_RH(data, T=T, F_vals=Fs, L_vals=Ls, seeds=seeds, RH_opt_gap=RH_opt_gap, 
@@ -30,7 +30,7 @@ opt_gaps = [0.005]
 
 data = load_rts_data(336)
 
-benchmark_UC_build(data, opt_gap = 0.001)
+benchmark_UC_build(data, opt_gap = 0.05)
 #sweep_benchmark(data, T_vals=times, opt_gaps=opt_gaps, csv_path=f"bench_sto_results_gaps{opt_gap}_rts.csv", verbose=True)
 
 # data = load_csv_data(336)

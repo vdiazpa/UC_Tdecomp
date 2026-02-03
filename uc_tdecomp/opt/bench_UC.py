@@ -222,9 +222,10 @@ def benchmark_UC_build(data, save_sol_to:str = False, opt_gap=0.001, fixed_commi
         power_cost = sum( data['gen_cost'][g]  * m.PowerGenerated[g,t]     for g in m.ThermalGenerators   for t in m.TimePeriods)
         renew_cost = sum( 0.01 * m.RenPowerGenerated[g,t]                  for g in m.RenewableGenerators for t in m.TimePeriods)
         disch_cost = sum( 20.0 * m.DischargePower[b,t]                     for b in m.StorageUnits        for t in m.TimePeriods)
+        ch_cost = sum( 20.0 * m.ChargePower[b,t]                for b in m.StorageUnits        for t in m.TimePeriods)
         shed_cost  = sum( 1000 * m.LoadShed[n,t]                           for n in data["load_buses"]    for t in m.TimePeriods)
 
-        return   start_cost + on_cost + power_cost + shed_cost + renew_cost + disch_cost + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits) 
+        return   start_cost + on_cost + power_cost + shed_cost + renew_cost + disch_cost + ch_cost + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits) 
         
         
     m.Objective = Objective(rule=ofv, sense=minimize)
