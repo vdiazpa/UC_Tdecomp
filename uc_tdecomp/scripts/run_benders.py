@@ -36,8 +36,8 @@ for T in [72, 168, 336]:
 
 
     print("\n######################### Solving with Benders ##################################")
-    t2 = perf_counter()
-    model_build_solve_benders_mpi(data,  fixed_commitment = None)
-    run2_time = perf_counter() - t2
-    print(f"Total time with commit only on first stage: {run2_time:.3f} secs")
+    # t2 = perf_counter()
+    # model_build_solve_benders_mpi(data,  fixed_commitment = None)
+    # run2_time = perf_counter() - t2
+    # print(f"Total time with commit only on first stage: {run2_time:.3f} secs")
 

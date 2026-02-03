@@ -3,7 +3,7 @@ from pyomo.environ import *
 from time import perf_counter
 import math
 
-def benchmark_UC_build(data, save_sol_to:str = False, opt_gap=0.001, fixed_commitment=None, tee=False, do_solve=True ):
+def benchmark_UC_build(data, save_sol_to:str = False, opt_gap=0.01, fixed_commitment=None, tee=False, do_solve=True ):
     """Build full horizon UC model & solve.
 
     Parameters
@@ -74,9 +74,9 @@ def benchmark_UC_build(data, save_sol_to:str = False, opt_gap=0.001, fixed_commi
 
     m.PowerGenerated      = Var(m.ThermalGenerators, m.TimePeriods, within=NonNegativeReals) 
     m.RenPowerGenerated   = Var(m.RenewableGenerators, m.TimePeriods, within=NonNegativeReals) 
-    m.PowerCostVar        = Var(m.ThermalGenerators, m.TimePeriods, within=NonNegativeReals) 
-    m.UTRemain            = Var(m.ThermalGenerators, m.TimePeriods, within=NonNegativeReals) 
-    m.DTRemain            = Var(m.ThermalGenerators, m.TimePeriods, within=NonNegativeReals) 
+    #m.PowerCostVar        = Var(m.ThermalGenerators, m.TimePeriods, within=NonNegativeReals) 
+    # m.UTRemain            = Var(m.ThermalGenerators, m.TimePeriods, within=NonNegativeReals) 
+    # m.DTRemain            = Var(m.ThermalGenerators, m.TimePeriods, within=NonNegativeReals) 
     m.UnitOn              = Var(m.ThermalGenerators, m.TimePeriods, within=Binary)
     m.UnitStart           = Var(m.ThermalGenerators, m.TimePeriods, within=Binary)
     m.UnitStop            = Var(m.ThermalGenerators, m.TimePeriods, within=Binary)
@@ -114,13 +114,13 @@ def benchmark_UC_build(data, save_sol_to:str = False, opt_gap=0.001, fixed_commi
     m.logical_constraints  = ConstraintList(doc = 'logical')
     m.RampUp_constraints   = ConstraintList(doc = 'ramp_up')
     m.RampDown_constraints = ConstraintList(doc = 'ramp_down')
-    m.UTRemain_constraints = ConstraintList(doc = 'UT_remain')
-    m.DTRemain_constraints = ConstraintList(doc = 'DT_remain')
+    # m.UTRemain_constraints = ConstraintList(doc = 'UT_remain')
+    # m.DTRemain_constraints = ConstraintList(doc = 'DT_remain')
 
     for g in m.ThermalGenerators:
         for t in m.TimePeriods: 
-            m.UTRemain_constraints.add( m.UTRemain[g,t] <= m.MinUpTime[g] * m.UnitOn[g,t]) 
-            m.DTRemain_constraints.add( m.DTRemain[g,t] <= m.MinDownTime[g] * (1 - m.UnitOn[g,t]))
+            # m.UTRemain_constraints.add( m.UTRemain[g,t] <= m.MinUpTime[g] * m.UnitOn[g,t]) 
+            # m.DTRemain_constraints.add( m.DTRemain[g,t] <= m.MinDownTime[g] * (1 - m.UnitOn[g,t]))
             
             
             if t == m.InitialTime:
@@ -239,7 +239,7 @@ def benchmark_UC_build(data, save_sol_to:str = False, opt_gap=0.001, fixed_commi
 
     if fixed_commitment is None:
         print("build time monolithic:", build_time)
-        
+
     opt = SolverFactory('gurobi')
     opt.options['MIPGap'] = opt_gap
 

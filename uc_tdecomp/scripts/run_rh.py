@@ -3,18 +3,18 @@ from ..data.data_extract import load_csv_data, load_rts_data
 from ..opt.RH_main import run_RH
 from ..opt.bench_UC import benchmark_UC_build
 
-RH_opt_gap = 0.001  # Optimality gap for RH subproblems
+RH_opt_gap = 0.05  # Optimality gap for RH subproblems
 prt_cry = False    # Print carryover constraints#
-opt_gap = 0.001     # Optimality gap for monolithic solve
+opt_gap = 0.05     # Optimality gap for monolithic solve
 L = 12             # Lookahead
-F = 14            # Roll forward period
-T = 168             # length of planning horizon
+F = 24            # Roll forward period
+T = 72             # length of planning horizon
 
 # ################################### Load data #####################################
 
-data = load_rts_data(T)
+#data = load_rts_data(T)
 #print(data)
-#data = load_csv_data(T)
+data = load_csv_data(T)
 # ###################################################################################
 
 def print_system_totals(data, T=None):
@@ -39,4 +39,4 @@ commitment, ofv, sol_to_plot = run_RH(
     #write_csv = f"RH_sol_RTS_T{T}_F{F}_L{L}_gap{opt_gap}.csv", 
     RH_opt_gap=RH_opt_gap, verbose=True, benchmark=False)
 
-benchmark_UC_build(data, opt_gap = opt_gap, tee=True)
+benchmark_UC_build(data, opt_gap=opt_gap, tee=True)

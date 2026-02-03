@@ -17,10 +17,10 @@ def scenario_creator(scenario_name, **kwargs):
 
     return m        
 
-def model_build_solve_benders_mpi(data, max_iter = 50, fixed_commitment = None):
+def model_build_solve_benders_mpi(data, max_iter = 30, fixed_commitment = None):
 
     options = {"root_solver" : "gurobi_persistent", "root_tee": True, "root_solver_options": { "MIPGap": 0.01}, # master problem # other options: "OutputFlag":1, "LogToConsole": 1,
-               "sp_solver"   : "gurobi_persistent",   "sp_tee": True, "store_subproblems" : True, # subproblems
+               "sp_solver"   : "gurobi",   "sp_tee": True, "store_subproblems" : True,  # subproblems
                "verbose": True,  "display_progress": True, "max_iter": max_iter, "tol": 1e-4, "valid_eta_lb": {"sc1": 0.0 } } #
     
     all_scenario_names = ["sc1"]
