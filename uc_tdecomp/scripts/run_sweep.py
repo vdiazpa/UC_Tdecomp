@@ -1,4 +1,4 @@
-#sweep.RH.py
+#run_sweep.py
 
 from ..data.data_extract import load_csv_data, load_rts_data
 from ..opt.RH_main import run_RH, sweep_RH

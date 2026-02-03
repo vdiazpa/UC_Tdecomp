@@ -3,7 +3,7 @@ from pyomo.environ import *
 from time import perf_counter
 import math
 
-def benchmark_UC_build(data, save_sol_to:str = False, opt_gap=0.001, fixed_commitment=None, tee=False ):
+def benchmark_UC_build(data, save_sol_to:str = False, opt_gap=0.001, fixed_commitment=None, tee=False, do_solve=True ):
     """Build full horizon UC model & solve.
 
     Parameters
@@ -21,9 +21,7 @@ def benchmark_UC_build(data, save_sol_to:str = False, opt_gap=0.001, fixed_commi
         {'ofv': Float, 'vars': Dict with var values}
     """
     m   = ConcreteModel()
-    t0  = perf_counter()
-    opt = SolverFactory('gurobi')
-    opt.warm_start_capable()
+    t0  = perf_counter() if do_solve else None
 
     # ======================== Sets
 
@@ -213,7 +211,9 @@ def benchmark_UC_build(data, save_sol_to:str = False, opt_gap=0.001, fixed_commi
             
  # ======================================= Objective Function ======================================= #
 
-    m.TimePrice = Param(m.TimePeriods, initialize=lambda m, t: 20.0 if (int(t) % 24) in (16, 17, 18, 19, 20) else 5.0)
+    m.StageOneCost = Expression(expr = 
+        sum( m.StartUpCost[g] * m.UnitStart[g,t]     for g in m.ThermalGenerators   for t in m.TimePeriods)
+        + sum( m.CommitmentCost[g] * m.UnitOn[g,t]   for g in m.ThermalGenerators   for t in m.TimePeriods) )
 
     # Objective
     def ofv(m):
@@ -229,6 +229,9 @@ def benchmark_UC_build(data, save_sol_to:str = False, opt_gap=0.001, fixed_commi
         
         
     m.Objective = Objective(rule=ofv, sense=minimize)
+
+    if not do_solve: 
+        return m
     
  # ======================================= Solve ======================================= #
  
@@ -236,7 +239,8 @@ def benchmark_UC_build(data, save_sol_to:str = False, opt_gap=0.001, fixed_commi
 
     if fixed_commitment is None:
         print("build time monolithic:", build_time)
-
+        
+    opt = SolverFactory('gurobi')
     opt.options['MIPGap'] = opt_gap
 
     t_solve = perf_counter()         # --------- start SOLVE timer

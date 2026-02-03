@@ -1,4 +1,4 @@
-#rh_run.py
+#run_rh.py
 
 from ..data.data_extract import load_csv_data, load_rts_data
 from ..opt.RH_main import run_RH

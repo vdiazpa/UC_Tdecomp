@@ -1,4 +1,4 @@
-#bench_run.py
+#run_bench.py
 
 from ..data.data_extract import load_csv_data, load_rts_data
 from ..opt.bench_UC import benchmark_UC_build
