@@ -2,7 +2,7 @@
 from pyomo.environ import *
 import math
 
-def build_RH_subprobs(data, s_e, init_state, fixed,  s_tee=False, warm_start = None, RH_opt_gap=0.01):
+def build_RH_subprobs(data, s_e, init_state, fixed,  s_tee=False, warm_start = None, RH_opt_gap=0.01, MUT=None, MDT=None):
     
     #t0 = perf_counter()
     m = ConcreteModel()
@@ -10,7 +10,6 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  s_tee=False, warm_start = N
     _, t_fix1 = fixed    
 
     # ======================== Sets
-    
     m.TimePeriods         = s_e
     m.LoadBuses           = Set(initialize=data['load_buses'], ordered=True)
     m.InitialTime         = min(s_e) #t0
@@ -23,19 +22,11 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  s_tee=False, warm_start = N
     #m.CostSegments        = Set(initialize=range(1, data['n_segments']), ordered=True)  # number of piecewise cost segments
 
     # ======================== Parameters 
-     
-    m.MinUpTime        = Param(m.ThermalGenerators, initialize=lambda m,g: int(math.ceil(data['min_UT'][g])))
-    m.MinDownTime      = Param(m.ThermalGenerators, initialize=lambda m,g: int(math.ceil(data['min_DT'][g])))
-    # fixed_T = [t for t in s_e if t <= t_fix1]
-    # m.FixedTime = Set(initialize=fixed_T, ordered=True)
-
-    # TO DO
-    # m.UTRemainT0 = Param(m.ThermalGenerators, initialize=lambda m,g: float(init_state['UTRemainT0'][g]))
-    # m.DTRemainT0 = Param(m.ThermalGenerators, initialize=lambda m,g: float(init_state['DTRemainT0'][g]))
-
     W = len(s_e)
     # m.MinUpTime        = Param(m.ThermalGenerators, initialize = data['min_UT'])
     # m.MinDownTime      = Param(m.ThermalGenerators, initialize = data['min_DT'])
+    m.MinUpTime        = Param(m.ThermalGenerators, initialize=lambda m,g: int(math.ceil(data['min_UT'][g])))
+    m.MinDownTime      = Param(m.ThermalGenerators, initialize=lambda m,g: int(math.ceil(data['min_DT'][g])))
     m.PowerGeneratedT0 = Param(m.ThermalGenerators, initialize = lambda m, g:(init_state.get('PowerGeneratedT0',{}).get(g,data['p_init'][g])) )   
     m.StatusAtT0       = Param(m.ThermalGenerators, initialize = lambda m, g:(init_state.get('StatusAtT0',      {}).get(g,data['init_status'][g])) ) 
     m.SoCAtT0          = Param(m.StorageUnits,      initialize = lambda m, b:(init_state.get('SoCT0',           {}).get(b,data['SoC_init'][b])) ) 
@@ -64,7 +55,6 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  s_tee=False, warm_start = N
     #m.ShutDownCost           = Param(m.ThermalGenerators,   initialize=data['shutdown_cost'])
 
     # ======================== Variables 
-     
     m.PowerGenerated      = Var(m.ThermalGenerators,  m.TimePeriods, within = NonNegativeReals )#bounds = lambda m, g, t: (0, m.MaximumPowerOutput[g]))
     m.RenPowerGenerated   = Var(m.RenewableGenerators, m.TimePeriods, within=NonNegativeReals) 
     m.UnitOn              = Var(m.ThermalGenerators, m.TimePeriods, within = Binary)
@@ -78,8 +68,6 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  s_tee=False, warm_start = N
     m.DischargePower      = Var(m.StorageUnits,      m.TimePeriods, within = NonNegativeReals, bounds = lambda m, b, t: (0, m.Storage_RoC[b]) )
     m.IsCharging          = Var(m.StorageUnits,      m.TimePeriods, within = Binary)
     m.IsDischarging       = Var(m.StorageUnits,      m.TimePeriods, within = Binary)
-    # m.UTRemain            = Var(m.ThermalGenerators, m.TimePeriods, within=NonNegativeReals) 
-    # m.DTRemain            = Var(m.ThermalGenerators, m.TimePeriods, within=NonNegativeReals) 
     #m.PowerCostVar        = Var(m.ThermalGenerators, m.TimePeriods, within = NonNegativeReals) 
 
     # ======================================= Single-period constraints ======================================= #
@@ -143,10 +131,7 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  s_tee=False, warm_start = N
                     m.RampDown_constraints.add(m.PowerGenerated[g,t-1] - m.PowerGenerated[g,t] <= m.NominalRampDownLimit[g] * m.UnitOn[g,t]  + m.ShutdownRampLimit[g] * m.UnitStop[g,t])
 
 # ======================================= Minimum UpTime & DownTime Constraints ======================================= #
-   
-    m.MinUpTime_constraints    = ConstraintList(doc='MinUpTime')
-    m.MinDownTime_constraints  = ConstraintList(doc='MinDownTime')
-    
+    #Carryover commitments based on initial status
     for g in m.ThermalGenerators:
         lg = min(W, int(m.InitialTimePeriodsOnline[g]))
         fg = min(W, int(m.InitialTimePeriodsOffline[g]))
@@ -159,38 +144,42 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  s_tee=False, warm_start = N
             for t in range(m.InitialTime, min(m.InitialTime + fg, t_fix1+1)):
                 m.UnitOn[g, t].fix(0)
 
+    if MUT == "classical" and MDT == "classical":
+        m.MinUpTime_constraints    = ConstraintList(doc='MinUpTime')
+        m.MinDownTime_constraints  = ConstraintList(doc='MinDownTime')
+        
+        for g in m.ThermalGenerators:
+            # Intra-window Uptime — only up to the last fixed period
+            for t in range(m.InitialTime + lg, min(m.InitialTime + W, t_fix1+1)):
+                kg = min(m.InitialTime - t + W, int(m.MinUpTime[g]))
+                valid_tt = [tt for tt in range(t, t+kg) if tt in m.TimePeriods and tt <= t_fix1]
+                if valid_tt:
+                    m.MinUpTime_constraints.add(sum(m.UnitOn[g,tt] for tt in valid_tt) >= kg * m.UnitStart[g,t])
 
-    # m.UTRemain_constraints = ConstraintList()
-    # m.DTRemain_constraints = ConstraintList()
+            # Intra-window Downtime — only up to last fixed period
+            for t in range(m.InitialTime + fg, min(m.FinalTime + 1, t_fix1+1)):
+                hg = min(m.FinalTime - t + 1, int(m.MinDownTime[g]))
+                valid_tt = [tt for tt in range(t, t+hg) if tt in m.TimePeriods and tt <= t_fix1]
+                if valid_tt:
+                    m.MinDownTime_constraints.add(sum((1 - m.UnitOn[g,tt]) for tt in valid_tt) >= m.UnitStop[g,t] * hg)
+            
+    elif MUT == "counter" and MDT == "counter":
+        m.UTRemain = Var(m.ThermalGenerators, m.TimePeriods, within=NonNegativeReals)
+        m.DTRemain = Var(m.ThermalGenerators, m.TimePeriods, within=NonNegativeReals)
+        m.UTRemain_constraints = ConstraintList()
+        m.DTRemain_constraints = ConstraintList()
+        for g in m.ThermalGenerators:
+            for t in m.TimePeriods:
+                m.UTRemain_constraints.add(m.UTRemain[g,t] <= m.MinUpTime[g] * m.UnitOn[g,t])
+                m.DTRemain_constraints.add(m.DTRemain[g,t] <= m.MinDownTime[g] * (1 - m.UnitOn[g,t]))
 
-    # for g in m.ThermalGenerators:
-    #     MUT = m.MinUpTimeP[g]
-    #     MDT = m.MinDownTimeP[g]
+                if t == m.InitialTime:
+                    m.UTRemain_constraints.add(m.UTRemain[g,t] >= m.InitialTimePeriodsOnline[g] + m.MinUpTime[g] * m.UnitStart[g,t] - m.UnitOn[g,t])
+                    m.DTRemain_constraints.add(m.DTRemain[g,t] >= m.InitialTimePeriodsOffline[g] + m.MinDownTime[g] * m.UnitStop[g,t] - (1 - m.UnitOn[g,t]))
+                else:
+                    m.UTRemain_constraints.add(m.UTRemain[g,t] >= m.UTRemain[g,t-1] + m.MinUpTime[g] * m.UnitStart[g,t] - m.UnitOn[g,t])
+                    m.DTRemain_constraints.add(m.DTRemain[g,t] >= m.DTRemain[g,t-1] + m.MinDownTime[g] * m.UnitStop[g,t] - (1 - m.UnitOn[g,t]))
 
-    #     for t in m.FixedTime:
-    #         m.UTRemain_constraints.add(m.UTRemain[g,t] <= MUT * m.UnitOn[g,t])
-    #         m.DTRemain_constraints.add(m.DTRemain[g,t] <= MDT * (1 - m.UnitOn[g,t]))
-
-    #         if t == m.InitialTime:
-    #             m.UTRemain_constraints.add(m.UTRemain[g,t] >= m.UTRemainT0[g] + MUT * m.UnitStart[g,t] - m.UnitOn[g,t])
-    #             m.DTRemain_constraints.add(m.DTRemain[g,t] >= m.DTRemainT0[g] + MDT * m.UnitStop[g,t] - (1 - m.UnitOn[g,t]))
-    #         else:
-    #             m.UTRemain_constraints.add(m.UTRemain[g,t] >= m.UTRemain[g,t-1] + MUT * m.UnitStart[g,t] - m.UnitOn[g,t])
-    #             m.DTRemain_constraints.add(m.DTRemain[g,t] >= m.DTRemain[g,t-1] + MDT * m.UnitStop[g,t] - (1 - m.UnitOn[g,t]))
-
-        # Intra-window Uptime — only up to the last fixed period
-        for t in range(m.InitialTime + lg, min(m.InitialTime + W, t_fix1+1)):
-            kg = min(m.InitialTime - t + W, int(m.MinUpTime[g]))
-            valid_tt = [tt for tt in range(t, t+kg) if tt in m.TimePeriods and tt <= t_fix1]
-            if valid_tt:
-                m.MinUpTime_constraints.add(sum(m.UnitOn[g,tt] for tt in valid_tt) >= kg * m.UnitStart[g,t])
-
-        # Intra-window Downtime — only up to last fixed period
-        for t in range(m.InitialTime + fg, min(m.FinalTime + 1, t_fix1+1)):
-            hg = min(m.FinalTime - t + 1, int(m.MinDownTime[g]))
-            valid_tt = [tt for tt in range(t, t+hg) if tt in m.TimePeriods and tt <= t_fix1]
-            if valid_tt:
-                m.MinDownTime_constraints.add(sum((1 - m.UnitOn[g,tt]) for tt in valid_tt) >= m.UnitStop[g,t] * hg)
                 
    # ====================================== Battery Energy Storage Constraints ====================================== #
     

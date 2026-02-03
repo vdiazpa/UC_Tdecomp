@@ -41,7 +41,7 @@ def RH_windows_fixes(T, F, L):
     return windows, fixes
 
 
-def run_RH(data, F, L, T, RH_opt_gap, verbose, write_csv: str = False,  s_tee= False, benchmark=False, seed=None):
+def run_RH(data, F, L, T, RH_opt_gap, verbose, write_csv: str = False,  s_tee= False, benchmark=False, seed=None, MUT=None, MDT=None):
     # Will run the rolling horizon algorithm given T, L, and F. 
     if T is None: 
         T = max(data["periods"])
@@ -62,7 +62,7 @@ def run_RH(data, F, L, T, RH_opt_gap, verbose, write_csv: str = False,  s_tee= F
         if verbose:
             print(f"Window {i+1}/{len(windows)}: {window} | fix {fix_periods}")
 
-        result = build_RH_subprobs(data, window, init_states if i>0 else {}, fix_periods, s_tee=s_tee, warm_start = warm_start, RH_opt_gap=RH_opt_gap)
+        result = build_RH_subprobs(data, window, init_states if i>0 else {}, fix_periods, s_tee=s_tee, warm_start = warm_start, RH_opt_gap=RH_opt_gap, MUT=MUT, MDT=MDT)
 
         warm_start  = result["warm_start"]
         init_states = result["InitialState"]
