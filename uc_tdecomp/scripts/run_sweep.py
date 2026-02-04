@@ -11,8 +11,8 @@ RH_opt_gap = 0.05  # Optimality gap for RH subproblems
 # ################################### Load data #####################################
 
 times = [72,168,336]
-Fs    = [12,24]
-Ls    = [12,24]
+Fs    = [24]
+Ls    = [12]
 seeds = (41,86)
 
 datasets = ['RTS', 'DUK']

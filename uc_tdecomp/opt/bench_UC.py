@@ -142,32 +142,35 @@ def benchmark_UC_build(data, save_sol_to:str = False, opt_gap=0.01, fixed_commit
 
 
 
+<<<<<<< Updated upstream
 #     for g in m.ThermalGenerators:
         
 #         lg = min(m.FinalTime, int(m.InitialTimePeriodsOnline[g]))         # CarryOver Uptime    
 #         if m.InitialTimePeriodsOnline[g] > 0:
 #             for t in range(m.InitialTime,  m.InitialTime + lg):
 #                 m.UnitOn[g, t].fix(1)
+=======
+        # Carryover downtime
+        fg = min(m.FinalTime, int(m.InitialTimePeriodsOffline[g]))
+        if m.InitialTimePeriodsOffline[g] > 0:
+            for t in range(m.InitialTime, m.InitialTime + fg):
+                m.UnitOn[g, t].fix(0)
 
-#         fg = min(m.FinalTime, int(m.InitialTimePeriodsOffline[g]))       # CarryOver Downtime
-#         if m.InitialTimePeriodsOffline[g] > 0: 
-#             for t in range(m.InitialTime, m.InitialTime + fg):
-#                 m.UnitOn[g, t].fix(0)
+        # Intra-horizon MUT
+        for t in range(m.InitialTime + lg, m.FinalTime + 1):
+            kg = min(m.FinalTime - t + 1, int(m.MinUpTime[g]))
+            m.MinUpTime_constraints.add(
+                sum(m.UnitOn[g, tt] for tt in range(t, t + kg)) >= kg * m.UnitStart[g, t])
 
-#     m.MinUpTime_constraints   = ConstraintList(doc = 'MinUpTime_constraints')
-#     m.MinDownTime_constraints = ConstraintList(doc = 'MinDownTime_constraints')
-    
-#     #Intra-window Uptime
-#     for t in range(m.InitialTime + lg, m.FinalTime + 1):
-#         kg = min(m.FinalTime - t + 1 , int(m.MinUpTime[g]))
-#         m.MinUpTime_constraints.add( sum(m.UnitOn[g,t] for t in range(t, t+kg)) >= kg * m.UnitStart[g,t] )
+        # Intra-horizon MDT
+        for t in range(m.InitialTime + fg, m.FinalTime + 1):
+            hg = min(m.FinalTime - t + 1, int(m.MinDownTime[g]))
+            valid_tt = [tt for tt in range(t, t + hg) if tt in m.TimePeriods]
+            m.MinDownTime_constraints.add(
+                sum(m.UnitOn[g, tt] for tt in valid_tt) <= (1 - m.UnitStop[g, t]) * hg)
+            
+>>>>>>> Stashed changes
 
-# # # Intra-window Downtime
-#     for t in range(m.InitialTime + fg, m.FinalTime + 1):
-#         hg = min(m.FinalTime - t + 1, int(m.MinDownTime[g]))
-#         valid_tt = [tt for tt in range(t, t + hg) if tt in m.TimePeriods]
-#         m.MinDownTime_constraints.add( sum(m.UnitOn[g,tt] for tt in valid_tt) <= (1 - m.UnitStop[g,t]) * hg )
-    
      # ======================================= Storage ======================================= #
      
     m.SoC_constraints = ConstraintList(doc="Storage")
