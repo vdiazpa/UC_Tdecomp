@@ -3,7 +3,8 @@ from pyomo.environ import *
 from time import perf_counter
 import math
 
-def benchmark_UC_build(data, save_sol_to:str = False, opt_gap=0.01, fixed_commitment=None, tee=False, do_solve=True ):
+def benchmark_UC_build(data, save_sol_to:str = False, opt_gap=0.01, fixed_commitment=None, 
+        tee=False, do_solve=True, MUT= "classical", MDT= "classical"):
     """Build full horizon UC model & solve.
 
     Parameters
@@ -14,7 +15,6 @@ def benchmark_UC_build(data, save_sol_to:str = False, opt_gap=0.01, fixed_commit
         Name of file if wish to save solution. 
     fixed_commitment : dict
         Dictionary with (Bool) solution to fix var values to.
-
     Returns
     -------
     dict
@@ -141,16 +141,17 @@ def benchmark_UC_build(data, save_sol_to:str = False, opt_gap=0.01, fixed_commit
 
 
 
+# ======================================= Minimum Up/Down Time ======================================= #
 
-<<<<<<< Updated upstream
+
 #     for g in m.ThermalGenerators:
         
 #         lg = min(m.FinalTime, int(m.InitialTimePeriodsOnline[g]))         # CarryOver Uptime    
 #         if m.InitialTimePeriodsOnline[g] > 0:
 #             for t in range(m.InitialTime,  m.InitialTime + lg):
 #                 m.UnitOn[g, t].fix(1)
-=======
         # Carryover downtime
+        
         fg = min(m.FinalTime, int(m.InitialTimePeriodsOffline[g]))
         if m.InitialTimePeriodsOffline[g] > 0:
             for t in range(m.InitialTime, m.InitialTime + fg):
@@ -169,7 +170,53 @@ def benchmark_UC_build(data, save_sol_to:str = False, opt_gap=0.01, fixed_commit
             m.MinDownTime_constraints.add(
                 sum(m.UnitOn[g, tt] for tt in valid_tt) <= (1 - m.UnitStop[g, t]) * hg)
             
->>>>>>> Stashed changes
+    if MUT == "classical" and MDT == "classical":
+        m.MinUpTime_constraints    = ConstraintList(doc='MinUpTime')
+        m.MinDownTime_constraints  = ConstraintList(doc='MinDownTime')
+
+        for g in m.ThermalGenerators:
+            lg = min(W_full, int(value(m.InitialTimePeriodsOnline[g])))
+            fg = min(W_full, int(value(m.InitialTimePeriodsOffline[g])))
+
+            # Carryover commitments from initial status
+            if lg > 0:
+                for t in range(m.InitialTime, m.InitialTime + lg):
+                    m.UnitOn[g, t].fix(1)
+            if fg > 0:
+                for t in range(m.InitialTime, m.InitialTime + fg):
+                    m.UnitOn[g, t].fix(0)
+
+            # Intra-horizon MUT
+            for t in range(m.InitialTime + lg, m.FinalTime + 1):
+                kg = min(m.FinalTime - t + 1, int(value(m.MinUpTime[g])))
+                m.MinUpTime_constraints.add(sum(m.UnitOn[g, tt] for tt in range(t, t + kg)) >= kg * m.UnitStart[g, t])
+
+            # Intra-horizon MDT
+            for t in range(m.InitialTime + fg, m.FinalTime + 1):
+                hg = min(m.FinalTime - t + 1, int(value(m.MinDownTime[g])))
+                m.MinDownTime_constraints.add(sum((1 - m.UnitOn[g, tt]) for tt in range(t, t + hg)) >= hg * m.UnitStop[g, t])
+
+    elif MUT == "counter" and MDT == "counter":
+        m.UTRemain = Var(m.ThermalGenerators, m.TimePeriods, within=NonNegativeReals)
+        m.DTRemain = Var(m.ThermalGenerators, m.TimePeriods, within=NonNegativeReals)
+        m.UTRemain_constraints = ConstraintList()
+        m.DTRemain_constraints = ConstraintList()
+
+        for g in m.ThermalGenerators:
+            for t in m.TimePeriods:
+                m.UTRemain_constraints.add(m.UTRemain[g, t] <= m.MinUpTime[g] * m.UnitOn[g, t])
+                m.DTRemain_constraints.add(m.DTRemain[g, t] <= m.MinDownTime[g] * (1 - m.UnitOn[g, t]))
+
+                if t == m.InitialTime:
+                    m.UTRemain_constraints.add(m.UTRemain[g, t] >= m.InitialTimePeriodsOnline[g] + m.MinUpTime[g] * m.UnitStart[g, t] - m.UnitOn[g, t])
+                    m.DTRemain_constraints.add(
+                        m.DTRemain[g, t] >= m.InitialTimePeriodsOffline[g] + m.MinDownTime[g] * m.UnitStop[g, t] - (1 - m.UnitOn[g, t]))
+                else:
+                    m.UTRemain_constraints.add(m.UTRemain[g, t] >= m.UTRemain[g, t-1] + m.MinUpTime[g] * m.UnitStart[g, t] - m.UnitOn[g, t])
+                    m.DTRemain_constraints.add(m.DTRemain[g, t] >= m.DTRemain[g, t-1] + m.MinDownTime[g] * m.UnitStop[g, t] - (1 - m.UnitOn[g, t]))
+    else:
+        raise ValueError(f"Unsupported MUT/MDT selection: MUT={MUT}, MDT={MDT}")
+
 
      # ======================================= Storage ======================================= #
      
