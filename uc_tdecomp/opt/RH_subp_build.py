@@ -85,7 +85,7 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  s_tee=False, warm_start = N
         storage = 0.0 if b not in data['bus_bat'] else sum(m.DischargePower[bat,t] - m.ChargePower[bat,t] for bat in data['bus_bat'][b])
         return thermal + flows + renew + shed + storage == data["demand"].get((b,t), 0.0)
     
-    m.NodalBalance = Constraint(data["buses"],  range(m.InitialTime, t_fix1+1) , rule = nb_rule) #
+    m.NodalBalance = Constraint(data["buses"],  m.TimePeriods , rule = nb_rule) #
     
     for t in m.TimePeriods:
         m.V_Angle[data["ref_bus"], t].fix(0.0)
@@ -111,8 +111,9 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  s_tee=False, warm_start = N
                 else:
                     #print("Relaxing unit commitment var for ", g, " at t = ", t, "will also relax some constraints")
                     m.UnitOn[g,t].domain = UnitInterval
-                    m.UnitStart[g,t].fix(0)
-                    m.UnitStop[g,t].fix(0)
+                    if MUT == "classical":
+                        m.UnitStart[g,t].fix(0)
+                        m.UnitStop[g,t].fix(0)
 
                     if t != m.InitialTime:
                         m.RampUp_constraints.add(m.PowerGenerated[g,t] - m.PowerGenerated[g,t-1]<= m.NominalRampUpLimit[g])     
@@ -150,6 +151,9 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  s_tee=False, warm_start = N
         
         for g in m.ThermalGenerators:
             # Intra-window Uptime — only up to the last fixed period
+            lg = min(W, int(value(m.InitialTimePeriodsOnline[g])))
+            fg = min(W, int(value(m.InitialTimePeriodsOffline[g])))
+
             for t in range(m.InitialTime + lg, min(m.InitialTime + W, t_fix1+1)):
                 kg = min(m.InitialTime - t + W, int(m.MinUpTime[g]))
                 valid_tt = [tt for tt in range(t, t+kg) if tt in m.TimePeriods and tt <= t_fix1]
@@ -232,15 +236,13 @@ def build_RH_subprobs(data, s_e, init_state, fixed,  s_tee=False, warm_start = N
         on_cost    = sum( m.CommitmentCost[g] * m.UnitOn[g,t]         for g in m.ThermalGenerators   for t in m.TimePeriods)
         renew_cost = sum( 0.01 * m.RenPowerGenerated[g,t]             for g in m.RenewableGenerators for t in m.TimePeriods)
         disch_cost = sum( 20.0 * m.DischargePower[b,t]                for b in m.StorageUnits        for t in m.TimePeriods)
-        ch_cost = sum( 20.0 * m.ChargePower[b,t]                for b in m.StorageUnits        for t in m.TimePeriods)
-
         power_cost = sum(data['gen_cost'][g] * m.PowerGenerated[g,t]  for g in m.ThermalGenerators   for t in m.TimePeriods)
         shed_cost  = sum( 1000 * m.LoadShed[n,t]                      for n in data["load_buses"]    for t in m.TimePeriods)
         
         #stop_cost  = sum(   m.ShutDownCost[g] * m.UnitStop[g,t]   for g in m.ThermalGenerators for t in m.TimePeriods)
         #c = sum(m.PowerCostVar[g,t] for g in m.ThermalGenerators for t in m.TimePeriods)
         
-        return  start_cost + on_cost + power_cost + shed_cost + renew_cost + disch_cost + ch_cost + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits)
+        return  start_cost + on_cost + power_cost + shed_cost + renew_cost + disch_cost + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits)
         
     m.Objective = Objective(rule=ofv, sense=minimize)
 

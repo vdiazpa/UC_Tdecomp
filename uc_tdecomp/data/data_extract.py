@@ -2,6 +2,7 @@
 # data_io.py
 from uc_tdecomp.data_utils import _read_from_file
 import pandas as pd
+from pathlib import Path
 
 def load_json_data(json_path: str):
 
@@ -337,22 +338,26 @@ def attach_timeseries_from_rts_csv(
     return data
 
 def load_csv_data(T): 
+    cwd = Path.cwd()
     
-    data_folder_name = "./duke_data_interim_P1"
-    
-    line_thing = "/" if "/" in data_folder_name else "\\"
-    gen_data    = pd.read_csv(f"{data_folder_name}{line_thing}data_genparams_partial_Interim_P1.csv", header=0)
-    line_data   = pd.read_csv(f"{data_folder_name}{line_thing}line_params_new.csv", header=0)
-    linetobus   = pd.read_csv(f"{data_folder_name}{line_thing}line_to_bus.csv", header=0)
-    bus_to_unit = pd.read_csv(f"{data_folder_name}{line_thing}gen_mat_Interim_P1.csv", header=0)
+    print("cwd:", cwd)
+
+    data_folder = cwd / "duke_data_interim_P1"   # same as "./RTS_data" but safe
+    print("data folder:", data_folder)
+    print("exists?", data_folder.exists())
+
+    gen_data    = pd.read_csv(data_folder / "data_genparams_partial_Interim_P1.csv", header=0)
+    line_data   = pd.read_csv(data_folder / "line_params_new.csv", header=0)
+    linetobus   = pd.read_csv(data_folder / "line_to_bus.csv", header=0)
+    bus_to_unit = pd.read_csv(data_folder / "gen_mat_Interim_P1.csv", header=0)
     bus_to_unit.set_index("name", inplace=True)
-    nuclear_df  = pd.read_csv(f"{data_folder_name}{line_thing}data_nuc_Interim_P1.csv", header=0, nrows = T)
-    hydro_df    = pd.read_csv(f"{data_folder_name}{line_thing}data_hydro_H.csv", header=0, nrows = T)
-    load_df     = pd.read_csv(f"{data_folder_name}{line_thing}data_load_2023.csv", header=0, nrows = T)
-    solar_df    = pd.read_csv(f"{data_folder_name}{line_thing}data_solar_2023.csv", header=0, nrows = T)
-    wind_df     = pd.read_csv(f"{data_folder_name}{line_thing}data_wind_2023.csv", header=0, nrows = T)
-    sto_mat     = pd.read_csv(f"{data_folder_name}{line_thing}storage_mat_Interim_P1.csv", header=0)
-    sto_params  = pd.read_csv(f"{data_folder_name}{line_thing}data_batparams_Interim_P1.csv", header=0)
+    nuclear_df  = pd.read_csv(data_folder / "data_nuc_Interim_P1.csv", header=0, nrows = T)
+    hydro_df    = pd.read_csv(data_folder / "data_hydro_H.csv", header=0, nrows = T)
+    load_df     = pd.read_csv(data_folder / "data_load_2023.csv", header=0, nrows = T)
+    solar_df    = pd.read_csv(data_folder / "data_solar_2023.csv", header=0, nrows = T)
+    wind_df     = pd.read_csv(data_folder / "data_wind_2023.csv", header=0, nrows = T)
+    sto_mat     = pd.read_csv(data_folder / "storage_mat_Interim_P1.csv", header=0)
+    sto_params  = pd.read_csv(data_folder / "data_batparams_Interim_P1.csv", header=0)
 
 
     periods      = [i for i in range(1,T+1,1)]
@@ -546,18 +551,23 @@ def load_csv_data(T):
     }
 
 def load_rts_data(T):
+    cwd = Path.cwd()
+    print("cwd:", cwd)
+
+    data_folder = cwd / "RTS_data"   # same as "./RTS_data" but safe
+    print("data folder:", data_folder)
+    print("exists?", data_folder.exists())
     
-    # Read data
-    gen_data  = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\gen_data.csv", header=0)
-    bus_data  = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\bus_data.csv", header=0)
-    line_data = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\branch_data.csv", header=0)
-    sto = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\storage.csv", header=0)
-    rtpv_data  = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_rtpv.csv", header = 0)
-    pv_data    = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_pv.csv", header = 0)
-    hydro_data = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_hydro.csv", header = 0)
-    wind_data  = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_wind.csv", header = 0)
-    load_data  = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_regional_Load.csv", header = 0)
-    csp_data  = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_Natural_Inflow.csv", header = 0)
+    gen_data    = pd.read_csv(data_folder/ "gen_data.csv", header=0)
+    bus_data    = pd.read_csv(data_folder/ "bus_data.csv", header=0)
+    line_data   = pd.read_csv(data_folder/ "branch_data.csv", header=0)
+    sto         = pd.read_csv(data_folder/ "storage.csv", header=0)
+    rtpv_data   = pd.read_csv(data_folder/ "DAY_AHEAD_rtpv.csv", header=0)
+    pv_data     = pd.read_csv(data_folder/ "DAY_AHEAD_pv.csv", header=0)
+    hydro_data  = pd.read_csv(data_folder/ "DAY_AHEAD_hydro.csv", header=0)
+    wind_data   = pd.read_csv(data_folder/ "DAY_AHEAD_wind.csv", header=0)
+    load_data   = pd.read_csv(data_folder/ "DAY_AHEAD_regional_Load.csv", header=0)
+    csp_data    = pd.read_csv(data_folder/ "DAY_AHEAD_Natural_Inflow.csv", header=0)
 
     periods = list(range(1, T+1))
 
@@ -601,8 +611,8 @@ def load_rts_data(T):
     TIME_COLS = {"Year","Month","Day","Period","Hour","Datetime","Timestamp"}
 
     def _build_nodal_demand_from_regional(T, start_row=0):
-        bus  = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\bus_data.csv", header=0)
-        load = pd.read_csv(r"C:\Users\vdiazpa\Documents\quest_planning\quest_planning\seismic_model\datasets\RTS_data\DAY_AHEAD_regional_Load.csv", skiprows=range(1, start_row+1), nrows=T)
+        bus  = pd.read_csv(data_folder/ "bus_data.csv", header=0)
+        load = pd.read_csv(data_folder/ "DAY_AHEAD_regional_Load.csv", skiprows=range(1, start_row+1), nrows=T)
 
         bus["Bus ID"] = bus["Bus ID"].astype(int)
         bus["Area"]   = bus["Area"].astype(int)

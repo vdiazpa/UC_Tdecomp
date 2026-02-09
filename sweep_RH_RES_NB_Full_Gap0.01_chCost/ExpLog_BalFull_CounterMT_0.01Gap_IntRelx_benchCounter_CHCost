@@ -1,0 +1,46 @@
+#monolithic solve with charge cost, mipGap 0.01, counter MUT/MDT constraints.
+
+uc_env) Veronicas-MBP:UC_Tdecomp veronica126$ python -m uc_tdecomp.scripts.run_rh
+Will solve mono with charge penallity at 0.01 opt gap, NB at full timeperiods, benchmark with counter MUT/MDT
+cwd: /Users/veronica126/Documents/UC_Tdecomp
+data folder: /Users/veronica126/Documents/UC_Tdecomp/RTS_data
+exists? True
+build time monolithic: 0.70072325
+Monolithic UC cost with opt gap 0.01 is: 2168467.0
+Monolithic build + solve time: 32.76
+
+cwd: /Users/veronica126/Documents/UC_Tdecomp
+data folder: /Users/veronica126/Documents/UC_Tdecomp/RTS_data
+exists? True
+build time monolithic: 1.7579575829999996
+Monolithic UC cost with opt gap 0.01 is: 4413309.42
+Monolithic build + solve time: 85.18
+
+cwd: /Users/veronica126/Documents/UC_Tdecomp
+data folder: /Users/veronica126/Documents/UC_Tdecomp/RTS_data
+exists? True
+build time monolithic: 3.761545541000004
+Monolithic UC cost with opt gap 0.01 is: 9230533.78
+Monolithic build + solve time: 500.26
+
+cwd: /Users/veronica126/Documents/UC_Tdecomp
+data folder: /Users/veronica126/Documents/UC_Tdecomp/duke_data_interim_P1
+exists? True
+build time monolithic: 4.311431665999976
+Monolithic UC cost with opt gap 0.01 is: 1154502470.36
+Monolithic build + solve time: 95.31
+
+cwd: /Users/veronica126/Documents/UC_Tdecomp
+data folder: /Users/veronica126/Documents/UC_Tdecomp/duke_data_interim_P1
+exists? True
+build time monolithic: 8.751110124999968
+Monolithic UC cost with opt gap 0.01 is: 2798901586.68
+Monolithic build + solve time: 302.25
+
+cwd: /Users/veronica126/Documents/UC_Tdecomp
+data folder: /Users/veronica126/Documents/UC_Tdecomp/duke_data_interim_P1
+exists? True
+build time monolithic: 17.52657879200001
+Monolithic UC cost with opt gap 0.01 is: 5931129133.58
+Monolithic build + solve time: 11458.27
+(uc_env) Veronicas-MBP:UC_Tdecomp veronica126$
