@@ -6,7 +6,6 @@ import pandas as pd
 import numpy as np
 import csv
 
-
 def RH_windows_fixes(T, F, L):
     #Gets window lengths and fixed time periods given L, F, and T
     W = F + L
@@ -41,7 +40,7 @@ def RH_windows_fixes(T, F, L):
     return windows, fixes
 
 
-def run_RH(data, F, L, T, RH_opt_gap, verbose, write_csv: str = False,  s_tee= False, benchmark=False, seed=None, MUT=None, MDT=None):
+def run_RH(data, F, L, T, RH_opt_gap, verbose, write_csv: str = False,  s_tee= False, benchmark=False, seed=None, MUT=None, MDT=None, plt_soc=False):
     # Will run the rolling horizon algorithm given T, L, and F. 
     if T is None: 
         T = max(data["periods"])
@@ -77,8 +76,13 @@ def run_RH(data, F, L, T, RH_opt_gap, verbose, write_csv: str = False,  s_tee= F
     if verbose:
         print(f"\nTotal RH time: {rh_time:.3f} secs")
 
-    eval_res = benchmark_UC_build(data, opt_gap=0.01, fixed_commitment = fixed_sol)
-    ofv      = eval_res.get("ofv", None)
+    eval_res = benchmark_UC_build(data, opt_gap=0.01, fixed_commitment = fixed_sol, MUT=MUT, MDT=MDT)
+    
+    if plt_soc: 
+        from .bench_UC import plot_soc_from_return
+        plot_soc_from_return(eval_res, prefix=f"RH_F{F}_L{L}_T{T}_", T=T, F=F, L=L, out_dir='SoC Plots_RH', show=False)
+        
+    ofv = eval_res.get("ofv", None)
 
     if write_csv:           # Collect all time periods and generators
         all_t = sorted({t for (g, t) in fixed_sol["UnitOn"].keys()})
@@ -136,7 +140,17 @@ def run_RH(data, F, L, T, RH_opt_gap, verbose, write_csv: str = False,  s_tee= F
     return rh_time, ofv,  fixed_sol 
 
 
-def sweep_RH(data, T =4, F_vals = [12,24], L_vals = [8,12], seeds=(41, 86, 55), RH_opt_gap = 0.01, only_valid = False, csv_path = f"rh_duke_results_EXP_4HR_sto.csv", verbose = False):
+def sweep_RH(data, T=24, F_vals = [12,24], L_vals = [8,12], seeds=(41, 86, 55), 
+    RH_opt_gap = 0.01, only_valid = False, csv_path = f"rh_duke_results_EXP_4HR_sto.csv", 
+    verbose = False, MUT="counter", MDT="counter"):
+
+    # --- normalize seeds so seeds=9 or seeds=(9) works ---
+    if seeds is None:
+        seeds = (None,)
+    elif isinstance(seeds, (int, np.integer)):
+        seeds = (int(seeds),)
+    elif not isinstance(seeds, (list, tuple)):
+        seeds = tuple(seeds)
 
     records = []
     for F in F_vals:
@@ -148,7 +162,8 @@ def sweep_RH(data, T =4, F_vals = [12,24], L_vals = [8,12], seeds=(41, 86, 55), 
             for s in seeds:
                 try:
                     rh_time, ofv, _ = run_RH(
-                        data, F, L, T, RH_opt_gap=RH_opt_gap, write_csv=False, verbose=verbose and (s == seeds[0]))
+                        data, F, L, T, RH_opt_gap=RH_opt_gap, write_csv=False, 
+                        MUT=MUT, MDT=MDT, verbose=verbose and (s == seeds[0]))
                     times.append(rh_time)
                     ofvs.append(ofv)
                 except Exception as e:

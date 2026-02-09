@@ -1,10 +1,10 @@
-
+#LR_main.py
 from .LR_subp_build import build_LR_subprobs
-from ..data.data_extract import load_csv_data
+from ..data.data_extract import  load_csv_data
+from ..opt.RH_main import run_RH
 from pyomo.environ import *
 from time import perf_counter
 from multiprocessing import Pool
-from ..data.data_extract import load_rts_data
 import numpy as np
 import math
 import json
@@ -167,17 +167,6 @@ def _capture_start(m):
 
 def _apply_start(m, start):
     """Assign Var.value; persistent solver reads these on set_warm_start()."""
-    # binaries
-    # for (g,t), v in start.get('UnitOn', {}).items():
-    #     if (g,t) in m.UnitOn: m.UnitOn[g,t].value = v
-    # for (g,t), v in start.get('UnitStart', {}).items():
-    #     if (g,t) in m.UnitStart: m.UnitStart[g,t].value = v
-    # for (g,t), v in start.get('UnitStop', {}).items():
-    #     if (g,t) in m.UnitStop: m.UnitStop[g,t].value = v
-    # for (b,t), v in start.get('IsCharging', {}).items():
-    #     if (b,t) in m.IsCharging: m.IsCharging[b,t].value = v
-    # for (b,t), v in start.get('IsDischarging', {}).items():
-    #     if (b,t) in m.IsDischarging: m.IsDischarging[b,t].value = v
 
     # continuous
     for (g,t), v in start.get('PowerGenerated', {}).items():
@@ -193,20 +182,21 @@ def sanitize(x):
     s = f"{x}".replace("_", "m").replace(".", "p")
     return s
 
-def save_run_csv(data, T, subn, gamma, gamma_hat, Lag_set, g_norm, Level_vals, out_dir="LR_runs"): ############## NEEEED TO CHNAGE FOLDER NAME WHEN CHANGE THE DATASET!!!!!
-    if len(data["buses"]) > 300: 
-        sys = "DUK"
-    else: 
-        sys = "RTS"
-    out_dir = out_dir + f"_{T}_{sys}"
+def save_run_csv(data, T, subn, gamma, gamma_hat, Lag_set, g_norm, Level_vals, out_dir="LR_runs"):
+    if data.get("buses")> 300:
+        out_dir = out_dir + f"_DUK_{T}"
+    else:
+        out_dir = out_dir + f"_RTS_{T}"
     os.makedirs(out_dir, exist_ok=True)
     iters = list(range(len(Lag_set)))
     dual  = np.asarray(Lag_set, dtype=float)
     lbest = np.maximum.accumulate(dual)
     level = np.asarray(Level_vals[:len(dual)], dtype=float)
     gnorm = np.asarray(g_norm + [np.nan]*(len(dual)-len(g_norm)), dtype=float)
+
     df = pd.DataFrame({"iteration": iters,"dual": dual,"best_dual": lbest,"level": level,"g_norm": gnorm})
-    base = f"T{T}_W{subn}_g{sanitize(gamma)}_ghat{sanitize(gamma_hat)}_{sys}"
+
+    base = f"T{T}_W{subn}_g{sanitize(gamma)}_ghat{sanitize(gamma_hat)}"
     csv_path  = os.path.join(out_dir, f"lr_{base}.csv")
     meta_path = os.path.join(out_dir, f"lr_{base}.meta.json")
 
@@ -215,17 +205,16 @@ def save_run_csv(data, T, subn, gamma, gamma_hat, Lag_set, g_norm, Level_vals, o
         json.dump({"T": T, "window": subn, "gamma": gamma, "gamma_hat": gamma_hat}, f, indent=2)
 
     print(f"[saved] {csv_path}")
-    
+
 def save_norms_csv(data, T, subn, gamma, g_norm, out_dir="LR_runs"):
-    if len(data["buses"]) > 300: 
-        sys = "DUK"
-    else: 
-        sys = "RTS"
-    out_dir = out_dir + f"_{T}_{sys}"
+    if data.get("buses")> 300:
+        out_dir = out_dir + f"_DUK_{T}"
+    else:
+        out_dir = out_dir + f"_RTS_{T}"
     os.makedirs(out_dir, exist_ok=True)
     iters = np.arange(1, len(g_norm) + 1)
     df = pd.DataFrame({"iteration": iters, "g_norm": np.asarray(g_norm, dtype=float)})
-    base = f"T{T}_W{subn}_g{sanitize(gamma)}_{sys}"
+    base = f"T{T}_W{subn}_g{sanitize(gamma)}"
     path = os.path.join(out_dir, f"norms_{base}.csv")
     df.to_csv(path, index=False)
     print(f"[saved] {path}")
@@ -253,8 +242,8 @@ if __name__ == "__main__":
     #======================================================================= Load Data =====
 
     T = 336
+    #data        = load_rts_data(T)
     data        = load_csv_data(T)
-    #data        = load_csv_data(T)
     bats        = data["bats"]
     ther_gens   = data["ther_gens"]
     num_periods = len(data["periods"])
@@ -303,8 +292,8 @@ if __name__ == "__main__":
     results0 = pool.map(solver_function, tasks0)            # solves and stores
     Lag0, g0 = get_lagrange_and_g(results0, Time_windows)
     
-    q0 = compute_q0_from_rh(data, T=T, F=24, L=12, rh_opt_gap=0.01, MUT="counter", MDT="counter") 
-        
+    q0 = compute_q0_from_rh(data, T=T, F=24, L=12, rh_opt_gap=0.01,MUT="counter", MDT="counter")
+
     t_after_init = perf_counter()
     print(f"\nInitial build and solve time: {t_after_init - t_all_start:.3f} secs", "\nqbar is: ", f"{q0:.2f}", '\n', "Dual Value is", f"{Lag0:.2f}")
 

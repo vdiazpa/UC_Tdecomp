@@ -247,10 +247,9 @@ def benchmark_UC_build(data, save_sol_to:str = False, opt_gap=0.01, fixed_commit
         power_cost = sum( data['gen_cost'][g]  * m.PowerGenerated[g,t]     for g in m.ThermalGenerators   for t in m.TimePeriods)
         renew_cost = sum( 0.01 * m.RenPowerGenerated[g,t]                  for g in m.RenewableGenerators for t in m.TimePeriods)
         disch_cost = sum( 20.0 * m.DischargePower[b,t]                     for b in m.StorageUnits        for t in m.TimePeriods)
-        ch_cost = sum( 20.0 * m.ChargePower[b,t]                for b in m.StorageUnits        for t in m.TimePeriods)
         shed_cost  = sum( 1000 * m.LoadShed[n,t]                           for n in data["load_buses"]    for t in m.TimePeriods)
 
-        return   start_cost + on_cost + power_cost + shed_cost + renew_cost + disch_cost + ch_cost + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits) 
+        return   start_cost + on_cost + power_cost + shed_cost + renew_cost + disch_cost  + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits) 
         
         
     m.Objective = Objective(rule=ofv, sense=minimize)
@@ -359,7 +358,7 @@ def benchmark_UC_build(data, save_sol_to:str = False, opt_gap=0.01, fixed_commit
     return return_object
 
 
-def plot_soc_from_return(return_object, out_dir='SoC Plots', prefix=None, T=None, F=None, L=None, *, save_svg=True, save_pdf=True, dpi=300, figsize=(3.5, 1.5), show=False):
+def plot_soc_from_return(return_object, out_dir='SoC Plots_revised', prefix=None, T=None, F=None, L=None, *, save_svg=True, save_pdf=True, dpi=300, figsize=(3.5, 1.5), show=False):
     """Plot state-of-charge (SoC) time series for all storage units.
 
     Parameters
@@ -452,6 +451,96 @@ def plot_soc_from_return(return_object, out_dir='SoC Plots', prefix=None, T=None
 
 # Example usage:
 # plot_soc_from_return(return_object, out_dir='RH_plots_final', prefix='RHSoC', T=T, F=F, L=L)
+
+def plot_soc_overlay_top_active_3_tight(return_full, return_rh,
+                                      out_path="SoC_overlay_top3_tight.pdf",
+                                      n_units=3,
+                                      figsize=(3.5, 2.35),   # a bit taller = less squish
+                                      soc_units="SoC (MWh)",
+                                      x_label="Time (hr)",
+                                      blue="tab:blue"):
+    import pandas as pd
+    import matplotlib.pyplot as plt
+
+    def to_df_soc(ret):
+        soc = ret.get("vars", {}).get("SoC", {})
+        if not soc:
+            raise ValueError("No SoC found in return_object['vars']['SoC']")
+        s = pd.Series(soc)
+        s.index = pd.MultiIndex.from_tuples(s.index, names=["b", "t"])
+        return s.reorder_levels(["t", "b"]).sort_index().unstack("b")
+
+    df_full = to_df_soc(return_full)
+    df_rh   = to_df_soc(return_rh)
+
+    # align time + units
+    df_full, df_rh = df_full.align(df_rh, join="inner", axis=0)
+    df_full, df_rh = df_full.align(df_rh, join="inner", axis=1)
+    if df_full.empty:
+        raise ValueError("After alignment, SoC data is empty. Check indexing.")
+
+    # most active by SoC swing in FULL
+    swing = (df_full.max() - df_full.min()).abs().sort_values(ascending=False)
+    top_units = swing.head(n_units).index.tolist()
+
+    # stats (optional)
+    delta_all = df_rh - df_full
+    max_abs_by_unit = delta_all.abs().max()
+
+    fig, axes = plt.subplots(n_units, 1, sharex=True, figsize=figsize)
+
+    # Leave room on the right for legend + ESS labels
+    fig.subplots_adjust(left=0.16, right=0.80, top=0.98, bottom=0.16, hspace=0.35)
+
+    for i, b in enumerate(top_units):
+        ax = axes[i] if n_units > 1 else axes
+
+        ax.plot(df_full.index, df_full[b], linewidth=1.1, linestyle="-",
+                color=blue, label="Mono")
+        ax.plot(df_rh.index,   df_rh[b],   linewidth=1.1, linestyle="--",
+                color=blue, label="RH")
+
+        # nicer y scaling per panel
+        ymin = float(min(df_full[b].min(), df_rh[b].min()))
+        ymax = float(max(df_full[b].max(), df_rh[b].max()))
+        pad = 0.05 * (ymax - ymin) if ymax > ymin else 1.0
+        ax.set_ylim(ymin - pad, ymax + pad)
+
+        # fewer y ticks so they don't cram
+        ax.locator_params(axis="y", nbins=3)
+        ax.tick_params(axis="both", labelsize=7)
+
+        # move ESS label to the right side (outside the axes)
+        ax.text(1.02, 0.5, f"ESS-{i+1}",
+                transform=ax.transAxes, va="center", ha="left", fontsize=8)
+
+    # shared labels
+    fig.supylabel(soc_units, fontsize=8)
+    (axes[-1] if n_units > 1 else axes).set_xlabel(x_label, fontsize=8)
+
+    # legend on the right, centered vertically (no top space wasted)
+# legend bottom-right (inside), with your labels
+    handles, _ = (axes[0] if n_units > 1 else axes).get_legend_handles_labels()
+    fig.legend(handles[:2], ["Mono", "RH"],
+            loc="lower right",
+            bbox_to_anchor=(0.98, 0.02),
+            frameon=False, fontsize=7)
+
+    fig.subplots_adjust(bottom=0.20)
+
+    fig.savefig(out_path.replace(".pdf", ".pdf"), bbox_inches="tight")          # vector
+    fig.savefig(out_path.replace(".pdf", ".svg"), bbox_inches="tight")          # vector (optional)
+    fig.savefig(out_path.replace(".pdf", ".png"), dpi=600, bbox_inches="tight") # raster fallback
+
+    plt.close(fig)
+
+    print("ESS mapping (most active by FULL SoC swing):")
+    for i, b in enumerate(top_units, 1):
+        print(f"  ESS-{i} -> unit_id={b} (swing={swing[b]:.2f}, max|ΔSoC|={max_abs_by_unit[b]:.2f})")
+
+    return top_units
+
+
 
 def sweep_benchmark(data, T_vals=(24, 72, 168), opt_gaps=(0.001,), solver_name='gurobi', only_valid=False, csv_path=None, verbose=False):
     """Sweep benchmark over multiple horizons (T) and optimality gaps.
