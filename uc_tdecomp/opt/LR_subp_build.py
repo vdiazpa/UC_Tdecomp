@@ -202,18 +202,18 @@ def build_LR_subprobs(data, s_e, index_set):
     
      # ======================================= Objective Function with penalties ======================================= #
      
-    # Objective
-    def ofv(m):
-        start_cost = sum( m.StartUpCost[g] * m.UnitStart[g,t]              for g in m.ThermalGenerators   for t in m.TimePeriods)
-        on_cost    = sum( m.CommitmentCost[g] * m.UnitOn[g,t]              for g in m.ThermalGenerators   for t in m.TimePeriods)
-        power_cost = sum( data['gen_cost'][g]  * m.PowerGenerated[g,t]     for g in m.ThermalGenerators   for t in m.TimePeriods)
-        renew_cost = sum( 0.01 * m.RenPowerGenerated[g,t]                  for g in m.RenewableGenerators for t in m.TimePeriods)
-        disch_cost = sum( 20.0 * m.DischargePower[b,t]                     for b in m.StorageUnits        for t in m.TimePeriods)
-        shed_cost  = sum( 1000 * m.LoadShed[n,t]                           for n in data["load_buses"]    for t in m.TimePeriods)
+    # # Objective
+    # def ofv(m):
+    #     start_cost = sum( m.StartUpCost[g] * m.UnitStart[g,t]              for g in m.ThermalGenerators   for t in m.TimePeriods)
+    #     on_cost    = sum( m.CommitmentCost[g] * m.UnitOn[g,t]              for g in m.ThermalGenerators   for t in m.TimePeriods)
+    #     power_cost = sum( data['gen_cost'][g]  * m.PowerGenerated[g,t]     for g in m.ThermalGenerators   for t in m.TimePeriods)
+    #     renew_cost = sum( 0.01 * m.RenPowerGenerated[g,t]                  for g in m.RenewableGenerators for t in m.TimePeriods)
+    #     disch_cost = sum( 20.0 * m.DischargePower[b,t]                     for b in m.StorageUnits        for t in m.TimePeriods)
+    #     shed_cost  = sum( 1000 * m.LoadShed[n,t]                           for n in data["load_buses"]    for t in m.TimePeriods)
 
-        #stop_cost  = sum(   m.ShutDownCost[g] * m.UnitStop[g,t]   for g in m.ThermalGenerators for t in m.TimePeriods)
-        #c = sum(m.PowerCostVar[g,t] for g in m.ThermalGenerators for t in m.TimePeriods)
-        return   start_cost + on_cost + power_cost + shed_cost + renew_cost + disch_cost + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits) 
+    #     #stop_cost  = sum(   m.ShutDownCost[g] * m.UnitStop[g,t]   for g in m.ThermalGenerators for t in m.TimePeriods)
+    #     #c = sum(m.PowerCostVar[g,t] for g in m.ThermalGenerators for t in m.TimePeriods)
+    #     return   start_cost + on_cost + power_cost + shed_cost + renew_cost + disch_cost + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits) 
        
 
     def ofv_start(m):
@@ -226,8 +226,11 @@ def build_LR_subprobs(data, s_e, index_set):
         pnlty_DObl = sum(       m.L[(g, t, 'DT_Obl')] * m.DT_Obl_end[g,t]     for g in m.ThermalGenerators  for t in m.Max_t)
         pnlty_gen  = sum( m.L[(g,t,'PowerGenerated')] * m.PowerGenerated[g,t] for g in m.ThermalGenerators  for t in m.Max_t) 
         pnlty_soc  = sum(            m.L[(g,t,'SoC')] * m.SoC[g,t]            for g in m.StorageUnits       for t in m.Max_t) 
+        renew_cost = sum(0.01 * m.RenPowerGenerated[g,t] for g in m.RenewableGenerators for t in m.TimePeriods)
+        disch_cost = sum(20.0 * m.DischargePower[b,t] for b in m.StorageUnits for t in m.TimePeriods)
+        # ch_cost    = sum(20.0 * m.ChargePower[b,t] for b in m.StorageUnits for t in m.TimePeriods)
 
-        return  start_cost  + on_cost + pow_cost + shed_cost +  pnlty_on + pnlty_gen + pnlty_UObl + pnlty_DObl + pnlty_soc + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits) 
+        return  start_cost  + on_cost + pow_cost + shed_cost + renew_cost + disch_cost +  pnlty_on + pnlty_gen + pnlty_UObl + pnlty_DObl + pnlty_soc + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits) 
 
     def ofv(m):
         shed_cost      = 1000*sum(        m.LoadShed[n,t]                              for n in data["load_buses"]   for t in m.TimePeriods)
@@ -246,10 +249,13 @@ def build_LR_subprobs(data, s_e, index_set):
         pnlty_UObl_cpy = sum(       m.L[(g, t, 'UT_Obl')] * m.UT_Obl_copy[g,t]         for g in m.ThermalGenerators  for t in m.Min_t)
         pnlty_DObl_cpy = sum(       m.L[(g, t, 'DT_Obl')] * m.DT_Obl_copy[g,t]         for g in m.ThermalGenerators  for t in m.Min_t)
         pnlty_pow_cpy  = sum( m.L[(g,t,'PowerGenerated')] * m.PowerGenerated_copy[g,t] for g in m.ThermalGenerators  for t in m.Min_t)
+        renew_cost = sum(0.01 * m.RenPowerGenerated[g,t] for g in m.RenewableGenerators for t in m.TimePeriods)
+        disch_cost = sum(20.0 * m.DischargePower[b,t] for b in m.StorageUnits for t in m.TimePeriods)
+        #ch_cost    = sum(20.0 * m.ChargePower[b,t] for b in m.StorageUnits for t in m.TimePeriods)
 
         penalty_costs  = pnlty_on + pnlty_pow + pnlty_UObl + pnlty_DObl + pnlty_soc - pnlty_on_cpy - pnlty_pow_cpy - pnlty_UObl_cpy - pnlty_DObl_cpy - pnlty_soc_cpy
 
-        return st_cost + shed_cost + on_cost + on_cpy_cost + pow_cost + pow_cpy_cost + penalty_costs + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits) 
+        return st_cost + shed_cost + on_cost + renew_cost + disch_cost +  on_cpy_cost + pow_cost + pow_cpy_cost + penalty_costs + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits) 
        
     
     def ofv_end(m):
@@ -262,8 +268,11 @@ def build_LR_subprobs(data, s_e, index_set):
         pnlty_DObl_cpy = sum(      m.L[(g, t, 'DT_Obl')] * m.DT_Obl_copy[g,t]         for g in m.ThermalGenerators  for t in m.Min_t)
         pnlty_pow_cpy  = sum(m.L[(g,t,'PowerGenerated')] * m.PowerGenerated_copy[g,t] for g in m.ThermalGenerators  for t in m.Min_t)
         pnlty_soc_cpy  = sum(         m.L[(g, t, 'SoC')] * m.SoC_copy[g,t]            for g in m.StorageUnits       for t in m.Min_t)
+        renew_cost = sum(0.01 * m.RenPowerGenerated[g,t] for g in m.RenewableGenerators for t in m.TimePeriods)
+        disch_cost = sum(20.0 * m.DischargePower[b,t] for b in m.StorageUnits for t in m.TimePeriods)
+        #ch_cost    = sum(20.0 * m.ChargePower[b,t] for b in m.StorageUnits for t in m.TimePeriods)
 
-        return   st_cost + on_cost + pow_cost + shed_cost - 1 * (pnlty_on_cpy + pnlty_pow_cpy + pnlty_UObl_cpy + pnlty_DObl_cpy + pnlty_soc_cpy) + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits) 
+        return   st_cost + on_cost + pow_cost + renew_cost + disch_cost + shed_cost - 1 * (pnlty_on_cpy + pnlty_pow_cpy + pnlty_UObl_cpy + pnlty_DObl_cpy + pnlty_soc_cpy) + 5000 * sum(m.SoC_Under[b] for b in m.StorageUnits) 
        
     if 1 in s_e: 
         m.Objective = Objective(rule=ofv_start, sense=minimize)

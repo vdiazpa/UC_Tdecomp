@@ -1,9 +1,10 @@
 
 from .LR_subp_build import build_LR_subprobs
-from ..data.data_extract import load_uc_data, load_csv_data
+from ..data.data_extract import load_csv_data
 from pyomo.environ import *
 from time import perf_counter
 from multiprocessing import Pool
+from ..data.data_extract import load_rts_data
 import numpy as np
 import math
 import json
@@ -114,7 +115,7 @@ def solver_function(task):
         opt.options['OutputFlag'] = 0
         opt.options['Presolve'] = 2
         opt.options['Threads'] = 1
-        opt.options['MIPGap'] = 0.05
+        opt.options['MIPGap'] = 0.01
         opt.set_instance(m)
         MODEL_CACHE[sub_id]  = m
         SOLVER_CACHE[sub_id] = opt
@@ -192,17 +193,20 @@ def sanitize(x):
     s = f"{x}".replace("_", "m").replace(".", "p")
     return s
 
-def save_run_csv(T, subn, gamma, gamma_hat, Lag_set, g_norm, Level_vals, out_dir="LR_runs"):
+def save_run_csv(data, T, subn, gamma, gamma_hat, Lag_set, g_norm, Level_vals, out_dir="LR_runs"): ############## NEEEED TO CHNAGE FOLDER NAME WHEN CHANGE THE DATASET!!!!!
+    if len(data["buses"]) > 300: 
+        sys = "DUK"
+    else: 
+        sys = "RTS"
+    out_dir = out_dir + f"_{T}_{sys}"
     os.makedirs(out_dir, exist_ok=True)
     iters = list(range(len(Lag_set)))
     dual  = np.asarray(Lag_set, dtype=float)
     lbest = np.maximum.accumulate(dual)
     level = np.asarray(Level_vals[:len(dual)], dtype=float)
     gnorm = np.asarray(g_norm + [np.nan]*(len(dual)-len(g_norm)), dtype=float)
-
     df = pd.DataFrame({"iteration": iters,"dual": dual,"best_dual": lbest,"level": level,"g_norm": gnorm})
-
-    base = f"T{T}_W{subn}_g{sanitize(gamma)}_ghat{sanitize(gamma_hat)}"
+    base = f"T{T}_W{subn}_g{sanitize(gamma)}_ghat{sanitize(gamma_hat)}_{sys}"
     csv_path  = os.path.join(out_dir, f"lr_{base}.csv")
     meta_path = os.path.join(out_dir, f"lr_{base}.meta.json")
 
@@ -212,31 +216,52 @@ def save_run_csv(T, subn, gamma, gamma_hat, Lag_set, g_norm, Level_vals, out_dir
 
     print(f"[saved] {csv_path}")
     
-def save_norms_csv(T, subn, gamma, g_norm, out_dir="LR_runs"):
+def save_norms_csv(data, T, subn, gamma, g_norm, out_dir="LR_runs"):
+    if len(data["buses"]) > 300: 
+        sys = "DUK"
+    else: 
+        sys = "RTS"
+    out_dir = out_dir + f"_{T}_{sys}"
     os.makedirs(out_dir, exist_ok=True)
     iters = np.arange(1, len(g_norm) + 1)
     df = pd.DataFrame({"iteration": iters, "g_norm": np.asarray(g_norm, dtype=float)})
-    base = f"T{T}_W{subn}_g{sanitize(gamma)}"
+    base = f"T{T}_W{subn}_g{sanitize(gamma)}_{sys}"
     path = os.path.join(out_dir, f"norms_{base}.csv")
     df.to_csv(path, index=False)
     print(f"[saved] {path}")
 
+import math
+from ..opt.RH_main import run_RH   
+
+def compute_q0_from_rh(data, T, F=24, L=12, rh_opt_gap=0.01,
+                       MUT="counter", MDT="counter"):
+    """
+    Returns a feasible UB for UC by running RH and evaluating it in the benchmark
+    (run_RH already evaluates via benchmark_UC_build internally).
+    """
+    rh_time, ub, fixed_sol = run_RH(data=data,F=F, L=L, T=T,RH_opt_gap=rh_opt_gap,
+        verbose=False, write_csv=False, s_tee=False,benchmark=False,seed=None,MUT=MUT, MDT=MDT)
+
+    if ub is None or (isinstance(ub, float) and math.isnan(ub)):
+        raise RuntimeError("RH-based q0 failed: run_RH returned ub=None/NaN")
+
+    print(f"[q0] Using RH UB as q0: {ub:.2f}  (RH time={rh_time:.2f}s, F={F}, L={L}, gap={rh_opt_gap})")
+    return ub
 
 if __name__ == "__main__":
 
     #======================================================================= Load Data =====
 
-    T = 72
-    #file_path  = "examples/unit_commitment/RTS_GMLC_zonal_noreserves.json"
-    #data        = load_uc_data(file_path)
+    T = 336
     data        = load_csv_data(T)
+    #data        = load_csv_data(T)
     bats        = data["bats"]
     ther_gens   = data["ther_gens"]
     num_periods = len(data["periods"])
     
     #============================================================= Set Time Windows ===
     
-    subn         = 12                             # number of periods in subproblem
+    subn         = 48                             # number of periods in subproblem
     num_sh       = math.ceil(num_periods/subn)     # number of subproblems
     Time_windows = [list(range(i, min(i+subn, num_periods+1))) for i in range(1, num_periods+1, subn)]
     
@@ -278,12 +303,7 @@ if __name__ == "__main__":
     results0 = pool.map(solver_function, tasks0)            # solves and stores
     Lag0, g0 = get_lagrange_and_g(results0, Time_windows)
     
-    if T == 168: 
-        q0 =  2822785549.96 #w/ storage
-    elif T ==336: 
-        q0 = 5964866534.55
-    else: 
-        q0 =  1175106609.19  #w/ storage
+    q0 = compute_q0_from_rh(data, T=T, F=24, L=12, rh_opt_gap=0.01, MUT="counter", MDT="counter") 
         
     t_after_init = perf_counter()
     print(f"\nInitial build and solve time: {t_after_init - t_all_start:.3f} secs", "\nqbar is: ", f"{q0:.2f}", '\n', "Dual Value is", f"{Lag0:.2f}")
@@ -390,8 +410,8 @@ if __name__ == "__main__":
         Level_vals.append(q)       
         
         runs.append({ 'gamma': gamma, 'gamma_hat': gamma_hat, 'Lag_set': Lag_set, 'Level_vals': Level_vals, 'Runtime': LR_runtime, 'g_norm': g_length })
-        save_run_csv(T, subn, gamma, gamma_hat, Lag_set, g_length, Level_vals)
-        save_norms_csv(T, subn, gamma, g_length)   # <— add this line
+        save_run_csv(data, T, subn, gamma, gamma_hat, Lag_set, g_length, Level_vals)
+        save_norms_csv(data, T, subn, gamma, g_length)   # <— add this line
 
     print("\n############### Summary of runs #################")
     for r in runs:

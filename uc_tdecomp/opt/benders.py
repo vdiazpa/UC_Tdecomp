@@ -11,7 +11,7 @@ def scenario_creator(scenario_name, **kwargs):
     
     data = kwargs.get("data")
     fixed_commitment = kwargs.get("fixed_commitment")
-    m = benchmark_UC_build(data, fixed_commitment=fixed_commitment, do_solve = False)
+    m = benchmark_UC_build(data, fixed_commitment=fixed_commitment, do_solve = False, MUT = "counter", MDT = "counter")
     sputils.attach_root_node(m, m.StageOneCost, [m.UnitOn, m.UnitStart, m.UnitStop, m.IsCharging, m.IsDischarging]) # ---- Attach Non-anticipativity info ---
     m._mpisppy_probability = 1.0 
 
@@ -21,7 +21,7 @@ def model_build_solve_benders_mpi(data, max_iter = 30, fixed_commitment = None):
 
     options = {"root_solver" : "gurobi_persistent", "root_tee": True, "root_solver_options": { "MIPGap": 0.01}, # master problem # other options: "OutputFlag":1, "LogToConsole": 1,
                "sp_solver"   : "gurobi",   "sp_tee": True, "store_subproblems" : True,  # subproblems
-               "verbose": True,  "display_progress": True, "max_iter": max_iter, "tol": 1e-4, "valid_eta_lb": {"sc1": 0.0 } } #
+               "verbose": True,  "display_progress": True,  "tol": 1e-2, "valid_eta_lb": {"sc1": 0.0 } } #
     
     all_scenario_names = ["sc1"]
     ls = LShapedMethod(options, all_scenario_names, scenario_creator, scenario_creator_kwargs={"data":data, "fixed_commitment": fixed_commitment})
